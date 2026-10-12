@@ -1,6 +1,6 @@
 # ARCHITECTURE.md: Clinical Co-Pilot
 
-Traces to [USERS.md](USERS.md) (UC-1 to UC-4) and [AUDIT.md](AUDIT.md) (finding ids S/P/D/C). Status: plan. Nothing here is implemented yet.
+Traces to [USERS.md](USERS.md) (UC-1 to UC-4) and [AUDIT.md](AUDIT.md) (finding ids S/P/D/C). Status: implemented for Checkpoint 2 (agent, module, verifier, audit, dashboard, evals, e2e). Where the build differs from this plan, section 12 says so and wins.
 
 ## Summary (about 500 words)
 
@@ -178,3 +178,31 @@ Pass and fail is mostly deterministic (schema, citation resolution, exact-match 
 - Whether the EHR launch flow works cleanly in the Tabs shell, or whether a module-issued short-lived token is needed. Decided by a spike on day one of the build.
 - Placeholder substitution may need care in free-text fields, where names appear inline.
 - Cost per brief depends on the chart size. The cost analysis will measure it on the seeded charts.
+
+## 12. Checkpoint 2 as built (appended; supersedes the plan above where they differ)
+
+What exists: `agent/` (FastAPI, Pydantic v2, Python 3.12 container), `interface/modules/custom_modules/oe-module-copilot/`,
+`evals/`, and Playwright specs in `tests/playwright/specs/`. Setup and endpoints: [agent/README.md](agent/README.md).
+
+| Plan said | As built | Why |
+|---|---|---|
+| Per-physician allow-list from provider of record | Active FHIR CareTeam membership, read with the user's own token, checked on every request (section 6.1, [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md)) | Measured: OpenEMR lets any clinician token read any patient, and `providerID` is not exposed in FHIR |
+| Token from SMART EHR launch | Authorization-code token for the logged-in user, issued by the module for the session; `sub` must equal the claimed user. Password grant is off | The Tabs shell has no clean EHR-launch hook; the token is still user-bound, introspected and expiry-checked on every call |
+| Nurse and resident roles unsupported | Nurse and front-desk users are denied by the same fail-closed check (no care-team membership) | Tested in pytest, evals and Playwright |
+| Self-hosted Langfuse traces | Own trace store (SQLite) plus `/dashboard`; Langfuse not deployed | Four extra containers do not fit next to OpenEMR on a laptop. The span schema is Langfuse-shaped, so export is possible later |
+| Audit exported to storage the app cannot rewrite | HMAC-chained SQLite log with `verify-audit` and `export-audit`. Off-box export is manual | Tamper-evident now; tamper-proof storage needs infrastructure outside this checkpoint |
+| LLM chosen from evals | Claude Sonnet through OpenRouter. A deterministic stub is used in all automated tests | Live runs are opt-in with a spend cap |
+| BAA with zero retention | Not applicable to synthetic data. Direct identifiers are still replaced with placeholders before the prompt | Keeps the production design honest |
+
+**Verified results.**
+
+- Agent pytest: 321 passed with the live stack (`OE_LIVE=1`), including the real OAuth flow, revocation, expiry and cross-physician denial.
+- Evals, stub tier: 47/47, across invariant, boundary, conflict, authorization, adversarial and failure-injection categories ([evals/results/stub-latest.md](evals/results/stub-latest.md)). Audit findings D1 to D9 each have a case. D10 (no vitals tool) and D11 (fixed in the seeder) are not covered, and D5 is a recorded known gap.
+- PHPUnit isolated: 23 tests for request signing parity, pid-to-UUID resolution and the chat proxy.
+- Playwright: 16 specs (the original 7 plus dock, citations, follow-up, denials, markup safety and LLM-down mode).
+- Bruno HTTP collection: 12 assertions ([docs/api-collection/copilot](docs/api-collection/copilot)).
+
+**Known limits carried forward.** The care team is the access list, so care-team edits are an access-control change and
+are not yet audited. Any care-team practitioner is admitted, not only physicians. Load testing and the AI cost
+analysis are Checkpoint 3 work; per-request tokens and cost are already stored in traces for it. The live-Sonnet eval
+tier is on demand and its results are not part of the 47/47 figure.

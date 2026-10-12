@@ -1,0 +1,19 @@
+meta {
+  name: OpenEMR FHIR metadata (public)
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{openemr}}/apis/default/fhir/metadata
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Public capability statement.
+}

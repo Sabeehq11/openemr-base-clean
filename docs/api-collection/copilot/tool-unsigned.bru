@@ -1,0 +1,25 @@
+meta {
+  name: Tool call without a signature (must be refused)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{agent}}/v1/tools/get_labs
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "11111111-2222-3333-4444-555555555555"
+  }
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  Tools are only reachable through the signed gateway.
+}

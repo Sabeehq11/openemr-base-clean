@@ -24,13 +24,14 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 |-----|---------|
 | [AUDIT.md](AUDIT.md) | Security, performance, architecture, data quality and compliance audit |
 | [USERS.md](USERS.md) | Target user, workflow and use cases (UC-1 to UC-4) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs (section 12 = as built) |
+| [agent/README.md](agent/README.md) | Co-Pilot setup guide, tests, endpoints, observability |
 
 **Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
 
 ## Architecture overview
 
-A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and self-hosted Langfuse traces, each tied to a correlation ID. Details, trust boundaries and tradeoffs: [ARCHITECTURE.md](ARCHITECTURE.md). Status: the agent is planned, not built. The MVP covers the audit, users and plan.
+A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and self-hosted Langfuse traces, each tied to a correlation ID. Details, trust boundaries and tradeoffs: [ARCHITECTURE.md](ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard and evals are built (Checkpoint 2). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
 
 ## Run locally
 

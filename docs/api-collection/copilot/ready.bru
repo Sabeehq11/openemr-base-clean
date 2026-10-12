@@ -1,0 +1,21 @@
+meta {
+  name: Ready (dependencies)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{agent}}/ready
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq ready
+  res.body.checks.audit_chain.ok: eq true
+}
+
+docs {
+  Reports ready only when OpenEMR FHIR, the LLM provider, the trace store and the audit chain are healthy. Returns 503 otherwise.
+}

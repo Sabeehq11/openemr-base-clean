@@ -1,0 +1,19 @@
+meta {
+  name: OpenEMR FHIR Patient read without a token (must be refused)
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{openemr}}/apis/default/fhir/Patient
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  OpenEMR refuses unauthenticated clinical reads.
+}

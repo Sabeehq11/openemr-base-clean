@@ -1,0 +1,25 @@
+meta {
+  name: Dashboard (operator)
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{agent}}/dashboard.json?window=3600
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: ops
+  password: {{dashboard_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.audit_chain.ok: eq true
+}
+
+docs {
+  Operator view: requests, errors, p50/p95, tool failures, verification pass rate, tokens, cost, and alert states.
+}

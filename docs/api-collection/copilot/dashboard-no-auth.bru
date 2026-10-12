@@ -1,0 +1,19 @@
+meta {
+  name: Dashboard without credentials (must be refused)
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{agent}}/dashboard.json
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  401 when DASHBOARD_TOKEN is set (404 when the dashboard is disabled). Never 200.
+}
