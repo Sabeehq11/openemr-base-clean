@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     oauth_client_secret: SecretStr = SecretStr("")
     data_dir: str = "./data"
     tool_timeout_s: float = 5.0
+    rate_limit_per_min: int = 60  # per verified user across chat and tool calls; 0 disables
 
 
 @lru_cache

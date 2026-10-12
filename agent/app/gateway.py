@@ -57,10 +57,36 @@ class NonceCache:
         return True
 
 
+class RateLimiter:
+    """Sliding one-minute window per key. In memory, per process: enough to blunt a runaway client or a replay flood."""
+
+    def __init__(self, limit: int, window_s: int = 60, clock=time.time) -> None:
+        self._limit, self._window, self._clock = limit, window_s, clock
+        self._hits: dict[str, list[float]] = {}
+
+    def allow(self, key: str) -> bool:
+        if self._limit <= 0:
+            return True
+        now = self._clock()
+        recent = [t for t in self._hits.get(key, []) if now - t < self._window]
+        if len(recent) >= self._limit:
+            self._hits[key] = recent
+            return False
+        recent.append(now)
+        self._hits[key] = recent
+        if len(self._hits) > 10_000:  # bound memory
+            self._hits = {k: v for k, v in self._hits.items() if v and now - v[-1] < self._window}
+        return True
+
+
+GENERIC_429 = {"error": "rate_limited", "message": "Too many requests. Please wait a moment."}
+
+
 class Gateway:
     def __init__(self, settings: Settings, audit: AuditSink | None = None, clock=time.time) -> None:
         self._s, self._audit, self._clock = settings, audit or LogAuditSink(), clock
         self._nonces = NonceCache(clock=clock)
+        self._limiter = RateLimiter(settings.rate_limit_per_min, clock=clock)
 
     def _reject(self, why: str) -> HTTPException:
         self._audit.record("gateway_rejected", why=why, correlation_id=correlation_id_var.get())
@@ -88,4 +114,7 @@ class Gateway:
             raise self._reject("bad_signature")
         if not self._nonces.first_use(nonce):  # only consumed after the signature is valid
             raise self._reject("replay")
+        if not self._limiter.allow(user.lower()):  # only verified callers are counted, so it cannot be used to lock others out
+            self._audit.record("gateway_rate_limited", user=user, correlation_id=correlation_id_var.get())
+            raise HTTPException(status_code=429, detail=GENERIC_429, headers={"Retry-After": "30"})
         return CallerContext(user_uuid=user, token=token, correlation_id=correlation_id_var.get(), body=body)
