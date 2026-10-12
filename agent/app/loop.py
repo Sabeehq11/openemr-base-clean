@@ -4,6 +4,7 @@ It yields events and ends in exactly one terminal event:
   done      -> an unverified AnswerDraft plus every envelope fetched (the verifier runs next)
   degraded  -> the model was unavailable; raw envelopes only, no prose
   denied    -> authorization refused; nothing else is revealed
+  declined  -> an authorized caller asked for a diagnosis or a treatment/dose recommendation; the model is not called
   failed    -> the model never produced a valid structure
 """
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pydantic import ValidationError
 from contracts import AnswerDraft, ToolError, ToolName
 
 from . import tracing
+from .advice import classify
 from .conversation import Conversation
 from .llm import LLMClient, LLMError, LLMResponse, Usage
 from .prompts import RETRY_PROMPT, SYSTEM_PROMPT, TOOL_SPECS, model_view
@@ -62,6 +64,10 @@ class AgentLoop:
             return
         except ToolError:
             yield {"type": "denied"}  # an unverifiable decision is a denial
+            return
+        advice = classify(question)
+        if advice is not None:  # after authorization, so an unauthorized caller only ever sees the generic denial
+            yield {"type": "declined", "kind": advice}
             return
         conv.messages.append({"role": "user", "content": question})
         steps, retried, limit_note = 0, False, None

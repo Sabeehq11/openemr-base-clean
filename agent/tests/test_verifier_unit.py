@@ -136,3 +136,17 @@ def test_allergy_conflict_flag_appears_end_to_end():
     amox = Medication(source_id="MedicationRequest/m2", name="Amoxicillin", dose_text=None, status="active", authored_on=None)
     a = verify(envs=[env(ToolName.GET_ALLERGIES, [al]), env(ToolName.GET_MEDICATIONS, [amox])])
     assert any("same drug class" in c.text for c in a.claims)
+
+
+def test_withheld_advice_is_explained():
+    from app.verifier import ADVICE_WITHHELD_NOTE
+    a = verify(fact("You should consider increasing the dose of metformin above 500 mg", ["MedicationRequest/m1"]),
+               fact("Metformin 500 mg twice daily", ["MedicationRequest/m1"]))
+    assert texts(a) == ["Metformin 500 mg twice daily"] and a.dropped_count == 1
+    assert ADVICE_WITHHELD_NOTE in a.notes
+
+
+def test_an_ordinary_unsourced_drop_does_not_claim_it_was_advice():
+    from app.verifier import ADVICE_WITHHELD_NOTE
+    a = verify(fact("Takes lisinopril", []))
+    assert a.dropped_count == 1 and ADVICE_WITHHELD_NOTE not in a.notes

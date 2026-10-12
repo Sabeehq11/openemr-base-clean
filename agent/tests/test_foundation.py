@@ -8,6 +8,7 @@ import logging
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.config import Settings
 from app.logging_setup import JsonFormatter, correlation_id_var, redact
@@ -46,7 +47,9 @@ def test_ready_fails_when_openrouter_key_missing(tmp_path, monkeypatch):
         return httpx.Response(200, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
-    s = Settings(data_dir=str(tmp_path), llm_provider="openrouter", openemr_base_url="http://x")
+    # Explicit empty key: Settings also reads agent/.env, so a developer's real key must not leak into this test.
+    s = Settings(data_dir=str(tmp_path), llm_provider="openrouter", openemr_base_url="http://x",
+                 openrouter_api_key=SecretStr(""))
     r = TestClient(create_app(s)).get("/ready")
     assert r.status_code == 503
     assert r.json()["checks"]["llm_provider"]["ok"] is False

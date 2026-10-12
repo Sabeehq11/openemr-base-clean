@@ -26,6 +26,25 @@ class AnswerDraft(BaseModel):
     claims: list[Claim] = Field(max_length=40)
 
 
+class SourceField(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    label: str
+    value: str
+
+
+class SourceCard(BaseModel):
+    """A read-only summary of one cited record, shown when the physician clicks a citation chip.
+
+    Built from records already fetched in this request. It never carries the patient's name or birth date.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    source_id: str
+    kind: str
+    title: str
+    fields: list[SourceField] = Field(default_factory=list)
+
+
 class VerifiedClaim(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     text: str
@@ -41,3 +60,4 @@ class VerifiedAnswer(BaseModel):
     claims: list[VerifiedClaim]
     dropped_count: int = 0
     notes: list[str] = Field(default_factory=list)
+    sources: list[SourceCard] = Field(default_factory=list, description="One card per cited source id, in citation order")

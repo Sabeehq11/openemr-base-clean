@@ -16,6 +16,8 @@ from contracts import (AnswerDraft, Claim, ClaimKind, ToolEnvelope, ToolName, Ve
 
 from .rules import RuleFinding, run_rules, violates_output_rules
 
+ADVICE_WITHHELD_NOTE = ("Some statements were withheld because they read as a diagnosis or a treatment "
+                        "recommendation. This assistant only reports what is recorded in the chart.")
 _NUM = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])")
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _ABSENCE_OK = re.compile(r"\b(documented|recorded|found in the record)\b", re.I)
@@ -55,18 +57,23 @@ class Verifier:
         records = {r.source_id: r for e in envelopes for r in e.records}
         empties = {e.tool for e in envelopes if e.empty}
         kept: list[VerifiedClaim] = []
-        dropped = 0
+        dropped = advice_dropped = 0
         for claim in draft.claims:
-            if self._claim_ok(claim, records, empties) and not self._violates(claim, records):
-                kept.append(VerifiedClaim(text=claim.text, source_ids=claim.source_ids, kind=claim.kind))
-            else:
+            if not self._claim_ok(claim, records, empties):
                 dropped += 1
+            elif self._violates(claim, records):
+                dropped += 1
+                advice_dropped += 1
+            else:
+                kept.append(VerifiedClaim(text=claim.text, source_ids=claim.source_ids, kind=claim.kind))
         findings = run_rules(envelopes, self._today())
         flags = [self._flag(f) for f in findings]
         notes = []
         if dropped:
             notes.append(f"{dropped} statement{'s' if dropped != 1 else ''} could not be verified and "
                          f"{'were' if dropped != 1 else 'was'} removed.")
+        if advice_dropped:  # say why, so the physician is not left guessing what was withheld
+            notes.append(ADVICE_WITHHELD_NOTE)
         if draft.claims and not kept:
             notes.append("Limited verified information is available; see the raw sources.")
         for e in envelopes:

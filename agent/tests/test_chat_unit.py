@@ -152,3 +152,55 @@ def test_real_verifier_drops_an_invented_value_end_to_end():
     shown = [cl["text"] for cl in answer["claims"]]
     assert "Problem: Condition item" in shown and "Potassium was 9.9" not in shown
     assert answer["dropped_count"] == 1
+
+
+def test_answer_event_carries_a_card_for_every_cited_source_and_only_those():
+    c, _ = build()
+    answer = dict(events(chat(c)))["answer"]
+    cited = {s for cl in answer["claims"] for s in cl["source_ids"]}
+    assert cited and {s["source_id"] for s in answer["sources"]} == cited
+    assert all(s["title"] and s["kind"] for s in answer["sources"])
+
+
+def test_degraded_event_carries_cards_for_the_chart_data_it_shows():
+    from app.llm import LLMError, LLMResponse, StubLLM, ToolCall
+
+    # The model reads the chart, then goes down: the physician is shown the fetched records, each with a card.
+    llm = StubLLM([LLMResponse(tool_calls=[ToolCall("t1", "get_medications", {}), ToolCall("t2", "get_problems", {})]),
+                   LLMError("down")])
+    c, _ = build(llm=llm)
+    ev = dict(events(chat(c)))
+    shown = {sid for env in ev["degraded"]["records"] for sid in env["source_ids"]}
+    assert shown and {s["source_id"] for s in ev["degraded"]["sources"]} == shown
+
+
+def test_answer_cards_never_leak_the_patient_identity():
+    c, _ = build()
+    raw = json.dumps(dict(events(chat(c)))["answer"]["sources"])
+    assert "Real" not in raw and "1970-01-01" not in raw and PID not in raw
+
+
+def test_advice_request_is_declined_without_calling_the_model_or_any_tool():
+    from app.llm import StubLLM
+
+    llm = StubLLM([])  # an empty script raises if the model is called at all
+    c, audit = build(llm=llm)
+    ev = events(chat(c, question="What dose should I raise metformin to?"))
+    assert [n for n, _ in ev] == ["conversation", "declined", "end"]
+    d = dict(ev)["declined"]
+    assert d["kind"] == "treatment" and d["message"].startswith("I can't recommend")
+    assert llm.calls == []
+    assert audit.events[-1][1]["outcome"] == "declined"
+    assert not any(e[0] == "tool_call" for e in audit.events)
+
+
+def test_advice_request_from_an_unauthorized_caller_gets_the_generic_denial_not_the_decline():
+    c, _ = build(allow=False)
+    ev = dict(events(chat(c, question="What dose should I raise metformin to?")))
+    assert "denied" in ev and "declined" not in ev
+
+
+def test_a_dose_lookup_is_still_answered():
+    c, _ = build()
+    names = [n for n, _ in events(chat(c, question="What dose of metformin is she on?"))]
+    assert "answer" in names and "declined" not in names

@@ -1,6 +1,6 @@
 """POST /v1/chat: signed request in, Server-Sent Events out.
 
-Events: `step` (a tool ran), then exactly one of `answer` | `degraded` | `denied` | `error`, then `end`.
+Events: `step` (a tool ran), then exactly one of `answer` | `declined` | `degraded` | `denied` | `error`, then `end`.
 The model's draft goes through a `Finalizer` (the verifier) before anything is emitted as `answer`.
 """
 from __future__ import annotations
@@ -15,9 +15,12 @@ from contracts import AnswerDraft, ToolEnvelope, VerifiedAnswer
 
 from . import tracing
 from .conversation import ConversationStore
+from .advice import decline_text
 from .gateway import AuditSink, Gateway
 from .llm import LLMClient
 from .loop import AgentLoop, Caller
+from .prompts import restore_patient_reference
+from .sources import all_cards, attach_sources
 from .tools import ToolRunner
 from .tracing import TraceStore
 
@@ -91,14 +94,20 @@ def build_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callabl
                         answer = finalizer(ev["draft"], ev["envelopes"])
                     trace.claims_kept = sum(1 for c in answer.claims if not c.rule_based)
                     trace.claims_dropped = answer.dropped_count
+                    answer = restore_patient_reference(answer, ev["envelopes"])  # after verification, at the output edge
+                    answer = attach_sources(answer, ev["envelopes"])  # cards only for ids a kept claim cites
                     payload = json.loads(answer.model_dump_json())
                     payload["notes"] = [*payload["notes"], *ev["notes"]]
                     yield sse("answer", payload)
                     terminal = "answer"
                 elif kind == "degraded":
                     yield sse("degraded", {"message": "The language model is unavailable. Showing chart data only.",
-                                           "records": _raw(ev["envelopes"])})
+                                           "records": _raw(ev["envelopes"]),
+                                           "sources": [json.loads(c.model_dump_json()) for c in all_cards(ev["envelopes"])]})
                     terminal = "degraded"
+                elif kind == "declined":
+                    yield sse("declined", {"kind": ev["kind"].value, "message": decline_text(ev["kind"])})
+                    terminal = "declined"
                 elif kind == "denied":
                     yield sse("denied", GENERIC_DENIAL)
                     terminal = "denied"
