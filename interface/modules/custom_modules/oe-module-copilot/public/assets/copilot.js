@@ -63,21 +63,69 @@
         return m;
     }
 
-    function chip(sourceId) {
-        var c = el('span', 'copilot-cite', sourceId.split('/')[0] + ' ' + sourceId.split('/').pop().slice(0, 8));
+    // A citation chip is a button. Clicking it opens (or closes) a read-only card for that record, built from the
+    // `sources` the agent sent with the answer. All text goes in with textContent.
+    function buildCard(src) {
+        var card = el('div', 'copilot-source-card');
+        card.dataset.source = src.source_id;
+        var h = el('p', 'copilot-source-title');
+        h.appendChild(el('span', 'copilot-source-kind', src.kind));
+        h.appendChild(el('strong', null, src.title));
+        card.appendChild(h);
+        var dl = el('dl', 'copilot-source-fields');
+        (src.fields || []).forEach(function (f) {
+            dl.appendChild(el('dt', null, f.label));
+            dl.appendChild(el('dd', null, f.value));
+        });
+        card.appendChild(dl);
+        card.appendChild(el('p', 'copilot-source-id', src.source_id));
+        return card;
+    }
+
+    function chip(sourceId, container, sources) {
+        var label = sourceId.split('/')[0] + ' ' + sourceId.split('/').pop().slice(0, 8);
+        var src = (sources || {})[sourceId];
+        var c = el('button', 'copilot-cite', label);
+        c.type = 'button';
         c.title = sourceId;
         c.dataset.source = sourceId;
+        if (!src) {  // no record to show: stays a plain label, never a dead button
+            c.disabled = true;
+            c.setAttribute('aria-disabled', 'true');
+            return c;
+        }
+        c.setAttribute('aria-expanded', 'false');
+        c.addEventListener('click', function () {
+            var open = Array.prototype.find.call(container.querySelectorAll('.copilot-source-card'),
+                function (n) { return n.dataset.source === sourceId; });
+            if (open) {
+                open.remove();
+                c.setAttribute('aria-expanded', 'false');
+                return;
+            }
+            container.appendChild(buildCard(src));
+            c.setAttribute('aria-expanded', 'true');
+        });
         return c;
+    }
+
+    function indexSources(list) {
+        var map = {};
+        (list || []).forEach(function (s) { map[s.source_id] = s; });
+        return map;
     }
 
     function renderAnswer(data) {
         var box = el('div', 'copilot-msg copilot-answer');
+        var sources = indexSources(data.sources);
         (data.claims || []).forEach(function (c) {
+            var wrap = el('div', 'copilot-claim-wrap');
             var row = el('p', 'copilot-claim copilot-' + c.kind);
             row.appendChild(el('span', 'copilot-claim-text', c.text));
-            (c.source_ids || []).forEach(function (s) { row.appendChild(chip(s)); });
+            (c.source_ids || []).forEach(function (s) { row.appendChild(chip(s, wrap, sources)); });
             if (c.rule_based) { row.appendChild(el('span', 'copilot-rule', 'rule check')); }
-            box.appendChild(row);
+            wrap.insertBefore(row, wrap.firstChild);
+            box.appendChild(wrap);
         });
         if (!(data.claims || []).length) {
             box.appendChild(el('p', 'copilot-claim', 'No verified statements could be produced for that question.'));
@@ -93,10 +141,13 @@
     function renderDegraded(data) {
         var box = el('div', 'copilot-msg copilot-degraded');
         box.appendChild(el('p', 'copilot-claim', data.message || 'The language model is unavailable. Showing chart data only.'));
+        var sources = indexSources(data.sources);
         (data.records || []).forEach(function (env) {
+            var wrap = el('div', 'copilot-claim-wrap');
             var h = el('p', 'copilot-claim', env.tool + (env.empty ? ': none documented' : ': ' + env.records.length + ' record(s)'));
-            (env.source_ids || []).forEach(function (s) { h.appendChild(chip(s)); });
-            box.appendChild(h);
+            (env.source_ids || []).forEach(function (s) { h.appendChild(chip(s, wrap, sources)); });
+            wrap.insertBefore(h, wrap.firstChild);
+            box.appendChild(wrap);
         });
         log.appendChild(box);
         log.scrollTop = log.scrollHeight;
@@ -107,6 +158,7 @@
         else if (event === 'step') { state.status.textContent = 'Checking ' + String(data.tool).replace(/_/g, ' ') + '...'; }
         else if (event === 'answer') { renderAnswer(data); state.done = true; }
         else if (event === 'degraded') { renderDegraded(data); state.done = true; }
+        else if (event === 'declined') { addMsg('copilot-declined', data.message); state.done = true; }
         else if (event === 'denied') { addMsg('copilot-denied', data.message); state.done = true; }
         else if (event === 'error') { addMsg('copilot-error', data.message); state.done = true; }
     }
