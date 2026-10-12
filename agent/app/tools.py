@@ -59,12 +59,7 @@ class ToolRunner:
     async def run(self, tool: ToolName, token: str | None, patient_uuid: str, claimed_user: str | None = None,
                   **args: object) -> ToolEnvelope:
         """Single entry point. The decision is made here, on every call, and bound to this patient."""
-        if not _valid_uuid(patient_uuid):
-            raise ToolError("invalid_input", "invalid patient identifier")
-        decision = await self._authz.authorize(token, patient_uuid, claimed_user)
-        if not decision.allowed or decision.patient_uuid != patient_uuid or token is None:
-            self._record("tool_denied", tool, patient_uuid, decision.user_uuid, decision.reason.value)
-            raise DeniedError(decision)
+        decision = await self.check(tool, token, patient_uuid, claimed_user)
         try:
             env = await self._dispatch[tool](token, patient_uuid, **args)
         except ToolError as e:
@@ -72,6 +67,17 @@ class ToolRunner:
             raise
         self._record("tool_call", tool, patient_uuid, decision.user_uuid, "ok", records=len(env.records))
         return env
+
+    async def check(self, tool: ToolName, token: str | None, patient_uuid: str,
+                    claimed_user: str | None = None) -> AuthzDecision:
+        """The per-call decision. Also used before serving a cached snapshot, so a cache hit is never a bypass."""
+        if not _valid_uuid(patient_uuid):
+            raise ToolError("invalid_input", "invalid patient identifier")
+        decision = await self._authz.authorize(token, patient_uuid, claimed_user)
+        if not decision.allowed or decision.patient_uuid != patient_uuid or token is None:
+            self._record("tool_denied", tool, patient_uuid, decision.user_uuid, decision.reason.value)
+            raise DeniedError(decision)
+        return decision
 
     def _record(self, event: str, tool: ToolName, patient: str, user: str | None, outcome: str, **extra: object) -> None:
         if self._audit is not None:

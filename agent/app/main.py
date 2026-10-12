@@ -11,6 +11,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .api import build_router
+from .chat import build_chat_router, fail_closed_finalizer
+from .conversation import ConversationStore
+from .llm import make_llm
 from .authz import PatientAuthorizer
 from .config import Settings, get_settings
 from .fhir_client import FhirClient
@@ -31,6 +34,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.gateway = Gateway(cfg, audit)
     app.state.runner = ToolRunner(PatientAuthorizer(cfg), FhirClient(cfg), audit=audit)
     app.include_router(build_router(app.state.gateway, app.state.runner))
+    app.state.finalizer = fail_closed_finalizer  # replaced by the verifier in the next build step
+    app.include_router(build_chat_router(
+        app.state.gateway, app.state.runner, lambda: make_llm(cfg),
+        lambda d, e: app.state.finalizer(d, e), ConversationStore(), audit))
 
     @app.middleware("http")
     async def correlation_middleware(request: Request, call_next):
