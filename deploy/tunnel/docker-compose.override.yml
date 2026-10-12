@@ -1,0 +1,25 @@
+# Hardening overlay for exposing the local dev stack through a tunnel. Synthetic data only.
+# Used by scripts/tunnel.sh:  docker compose -f docker/development-easy-light/docker-compose.yml -f deploy/tunnel/docker-compose.override.yml ...
+# The upstream compose file is not edited. Remove this overlay (scripts/tunnel.sh down) to return to the stock dev setup.
+services:
+  mysql:
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASS:-root}
+    ports: !override
+      - "127.0.0.1:${WT_MYSQL_PORT:-8320}:3306"
+  phpmyadmin:
+    ports: !override
+      - "127.0.0.1:${WT_PMA_PORT:-8310}:80"
+  openemr:
+    ports: !override
+      - "127.0.0.1:${WT_HTTP_PORT:-8300}:80"
+      - "127.0.0.1:${WT_HTTPS_PORT:-9300}:443"
+    volumes:
+      - ../../deploy/tunnel/security.conf:/etc/apache2/conf.d/zz-security.conf:ro
+    environment:
+      MYSQL_ROOT_PASS: ${DB_ROOT_PASS:-root}
+      # The stock file turns these on. Keep them off whenever the stack is exposed.
+      OPENEMR_SETTING_oauth_password_grant: 0
+      OPENEMR_SETTING_portal_onsite_two_enable: 0
+      OPENEMR_SETTING_rest_portal_api: 0
+      OPENEMR_SETTING_api_log_option: 1

@@ -5,6 +5,7 @@ Only used by tests marked `live`. Synthetic users only; credentials come from ag
 from __future__ import annotations
 
 import base64
+import os
 import hashlib
 import json
 import re
@@ -18,7 +19,7 @@ import httpx
 BASE = "https://localhost:9300"
 REDIRECT = "http://localhost:8400/oauth/callback"
 AGENT_DIR = Path(__file__).resolve().parent.parent
-MYSQL = ["docker", "exec", "development-easy-light-mysql-1", "mariadb", "-uroot", "-proot", "openemr", "-N", "-e"]
+MYSQL = ["docker", "exec", "development-easy-light-mysql-1", "mariadb", "-uroot", f"-p{os.environ.get('DB_ROOT_PASS', 'root')}", "openemr", "-N", "-e"]
 
 
 def load_env() -> dict[str, str]:

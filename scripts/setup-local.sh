@@ -28,7 +28,7 @@ COMPOSE_DIR="$ROOT/docker/development-easy-light"
 OE=development-easy-light-openemr-1
 DB=development-easy-light-mysql-1
 
-db() { docker exec -i "$DB" mariadb -uroot -proot openemr "$@"; }
+db() { docker exec -i "$DB" mariadb -uroot -p"${DB_ROOT_PASS:-root}" openemr "$@"; }
 
 cd "$COMPOSE_DIR"
 docker compose up -d

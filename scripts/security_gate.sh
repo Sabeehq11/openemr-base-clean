@@ -34,6 +34,9 @@ check "portal is disabled (portal_onsite_two_enable=0)" '[ "$(q "select gl_value
 check "REST portal API is disabled (rest_portal_api=0)" '[ "$(q "select gl_value from globals where gl_name=\"rest_portal_api\"")" = 0 ]'
 check "API log option is 1" '[ "$(q "select gl_value from globals where gl_name=\"api_log_option\"")" = 1 ]'
 
+check "session cookies over HTTPS carry the Secure flag" \
+  '[ "$(curl -sk -D - -o /dev/null "https://localhost:9300/interface/login/login.php?site=default" | grep -i "^set-cookie" | grep -vic "; secure")" = 0 ]'
+
 # 4. Secrets are not tracked or in history
 check "agent/.env and module config.local.php are git-ignored" \
   'git check-ignore -q agent/.env && git check-ignore -q interface/modules/custom_modules/oe-module-copilot/config.local.php'
