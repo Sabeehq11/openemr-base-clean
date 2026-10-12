@@ -61,3 +61,6 @@ __pycache__/
 
 # Co-Pilot module secrets
 interface/modules/custom_modules/oe-module-copilot/config.local.php
+
+# Created when agent modules are imported from the repo root (evals)
+/data/

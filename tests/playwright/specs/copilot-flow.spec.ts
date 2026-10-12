@@ -22,7 +22,7 @@ async function ask(page: Page, text?: string) {
 }
 
 test.describe('Co-Pilot brief flow', () => {
-  test.skip(!PASS, 'COPILOT_FIXTURE_PASSWORD not set');
+  test.skip(!PASS || process.env.COPILOT_E2E_MODE === 'degraded', 'needs fixture password and the normal agent');
 
   test('physician gets a cited brief for their own patient', async ({ page }) => {
     await login(page, 'copilot_doc_a', PASS);
@@ -59,5 +59,49 @@ test.describe('Co-Pilot brief flow', () => {
     await login(page, 'copilot_doc_b', PASS);
     await ask(page);
     await expect(page.locator('.copilot-error').first()).toContainText('Open a patient chart first');
+  });
+});
+
+test.describe('Co-Pilot follow-up and patient switch', () => {
+  test.skip(!PASS || process.env.COPILOT_E2E_MODE === 'degraded', 'needs fixture password and the normal (stub LLM) agent');
+
+  test('follow-up stays in the same conversation and is answered with citations', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page);
+    await expect(page.locator('.copilot-answer')).toHaveCount(1, { timeout: 30_000 });
+    await page.locator('#copilot-input').fill('What are the current medications?');
+    await page.locator('#copilot-send').click();
+    await expect(page.locator('.copilot-answer')).toHaveCount(2, { timeout: 30_000 });
+    await expect(page.locator('.copilot-user')).toHaveCount(2);
+    await expect(page.locator('.copilot-answer').nth(1).locator('.copilot-cite').first()).toBeVisible();
+  });
+
+  test('model markup in answers is rendered as text, never as HTML', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page);
+    await expect(page.locator('.copilot-answer').first()).toBeVisible({ timeout: 30_000 });
+    expect(await page.locator('#copilot-log script, #copilot-log img, #copilot-log iframe').count()).toBe(0);
+  });
+});
+
+test.describe('Co-Pilot degraded mode (agent started with LLM_PROVIDER=unavailable)', () => {
+  test.skip(!PASS || process.env.COPILOT_E2E_MODE !== 'degraded', 'run via scripts/e2e_copilot.sh');
+
+  test('LLM outage shows chart data only, labelled, with sources and no prose answer', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page);
+    const d = page.locator('.copilot-degraded').first();
+    await expect(d).toBeVisible({ timeout: 30_000 });
+    await expect(d).toContainText('language model is unavailable');
+    await expect(page.locator('.copilot-answer')).toHaveCount(0);
+  });
+
+  test('OpenEMR itself keeps working while the assistant is degraded', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    const r = await page.request.get('/interface/patient_file/summary/demographics.php?set_pid=100');
+    expect(r.ok()).toBeTruthy();
   });
 });
