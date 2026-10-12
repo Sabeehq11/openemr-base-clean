@@ -119,6 +119,16 @@ What it does not catch (known limits):
 - Nurse and resident roles are not supported in the MVP. The module refuses to open the dock for users outside the physician ACL group.
 - Denials are logged with the correlation ID and user.
 
+### 6.1 Update after the authorization proof (Checkpoint 2)
+
+Measured results are in `agent/AUTHZ_PROOF.md`. Where they differ from the text above, this section wins.
+
+- OpenEMR checks token and scope only. Any clinician token reads any patient over FHIR, and the SMART patient-binding hook (`checkUserHasAccessToPatient`) is a stub. A `providerID` allow-list is therefore not used.
+- The patient-level decision is made by the agent from OpenEMR data on every request: live token introspection, required scopes, token subject equals the claimed user, and the user must be an active practitioner on the patient's active FHIR CareTeam, read with the user's own token. Any error is a denial.
+- The scopes used are `user/*` read scopes with a user-bound token from the authorization-code flow, not `patient/*`. Patient-bound `patient/*` tokens narrow reads but cannot read CareTeam, so they cannot make the decision.
+- The module's HMAC signature is integrity only and never grants access.
+- Password grant was enabled in the local install and is now turned off (tested).
+
 ## 7. Observability and audit
 
 - **Correlation ID.** A UUID is created at the module (or the gateway if absent) and carried in every log line, tool call, FHIR request header, LLM call and trace.

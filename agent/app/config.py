@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     module_signing_secret: SecretStr = SecretStr("")
     audit_hmac_key: SecretStr = SecretStr("")
+    oauth_client_id: str = ""
+    oauth_client_secret: SecretStr = SecretStr("")
     data_dir: str = "./data"
     tool_timeout_s: float = 5.0
 
