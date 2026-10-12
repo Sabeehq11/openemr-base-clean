@@ -58,3 +58,6 @@ agent/.venv/
 agent/data/
 agent/.pytest_cache/
 __pycache__/
+
+# Co-Pilot module secrets
+interface/modules/custom_modules/oe-module-copilot/config.local.php

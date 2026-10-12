@@ -1,0 +1,5 @@
+# Only public/ is meant to be requested. Config, source and examples must never be served directly.
+# (AllowOverride is FileInfo only, so this uses mod_rewrite.)
+RewriteEngine On
+RewriteCond %{REQUEST_URI} !/oe-module-copilot/public/
+RewriteRule .* - [F,L]

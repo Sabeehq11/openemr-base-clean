@@ -1,0 +1,5 @@
+# In the dev stack the repository is the OpenEMR web root, so nothing under agent/ may be served over HTTP.
+# It holds secrets (.env), fixtures and service code. The agent is reached only through its own internal port.
+# (AllowOverride is FileInfo only, so access control is done with mod_rewrite rather than Require.)
+RewriteEngine On
+RewriteRule .* - [F,L]

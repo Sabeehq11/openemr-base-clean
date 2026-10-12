@@ -1,0 +1,8 @@
+<?php
+
+// Copy to config.local.php (git-ignored). Values must match agent/.env.
+return [
+    'agent_base_url' => 'http://agent:8400',
+    'signing_secret' => 'same value as MODULE_SIGNING_SECRET in agent/.env',
+    'oauth_client_id' => 'same value as OAUTH_CLIENT_ID in agent/.env',
+];

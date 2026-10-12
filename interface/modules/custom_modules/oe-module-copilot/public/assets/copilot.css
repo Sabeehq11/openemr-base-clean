@@ -1,0 +1,21 @@
+.copilot-toggle { position: fixed; right: 16px; bottom: 16px; z-index: 2000; padding: 10px 16px; border: 0; border-radius: 22px; background: #0b5cab; color: #fff; font-weight: 600; box-shadow: 0 2px 8px rgba(0,0,0,.3); cursor: pointer; }
+.copilot-panel { position: fixed; right: 16px; bottom: 64px; z-index: 2000; width: 380px; max-width: 94vw; height: 520px; max-height: 80vh; display: flex; flex-direction: column; background: #fff; border: 1px solid #b8c2cc; border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.3); font-size: 13px; }
+.copilot-panel[hidden] { display: none; }
+.copilot-head { padding: 8px 12px; background: #eef3f8; border-bottom: 1px solid #d5dde5; display: flex; flex-direction: column; }
+.copilot-sub { color: #5b6773; font-size: 11px; }
+.copilot-quick { margin: 8px 12px 0; padding: 6px; border: 1px solid #0b5cab; background: #fff; color: #0b5cab; border-radius: 4px; cursor: pointer; }
+.copilot-log { flex: 1; overflow-y: auto; padding: 8px 12px; }
+.copilot-msg { margin: 6px 0; padding: 6px 8px; border-radius: 6px; }
+.copilot-user { background: #e4effa; text-align: right; }
+.copilot-answer, .copilot-degraded { background: #f6f8fa; border: 1px solid #e1e6eb; }
+.copilot-degraded { background: #fff8e5; border-color: #f0d98a; }
+.copilot-denied, .copilot-error { background: #fdecea; border: 1px solid #f1b5ae; color: #8a1c10; }
+.copilot-status, .copilot-note { color: #5b6773; font-style: italic; font-size: 12px; margin: 4px 0; }
+.copilot-claim { margin: 4px 0; }
+.copilot-flag .copilot-claim-text { font-weight: 600; color: #8a4b00; }
+.copilot-cite { display: inline-block; margin-left: 4px; padding: 0 6px; border-radius: 8px; background: #dbe8f5; color: #0b4a8a; font-size: 11px; cursor: help; }
+.copilot-rule { margin-left: 4px; font-size: 10px; color: #6a3d9a; text-transform: uppercase; }
+.copilot-form { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid #d5dde5; }
+.copilot-input { flex: 1; padding: 6px; border: 1px solid #b8c2cc; border-radius: 4px; }
+.copilot-send { padding: 6px 12px; border: 0; border-radius: 4px; background: #0b5cab; color: #fff; cursor: pointer; }
+.copilot-send:disabled { opacity: .5; cursor: default; }
