@@ -10,8 +10,13 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .api import build_router
+from .authz import PatientAuthorizer
 from .config import Settings, get_settings
+from .fhir_client import FhirClient
+from .gateway import Gateway, LogAuditSink
 from .logging_setup import correlation_id_var, log_event, setup_logging
+from .tools import ToolRunner
 
 logger = logging.getLogger("agent.http")
 _CID_RE = re.compile(r"^[A-Za-z0-9\-]{8,64}$")
@@ -21,6 +26,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     setup_logging()
     app = FastAPI(title="Clinical Co-Pilot agent", docs_url=None, redoc_url=None)
     app.state.settings = settings or get_settings()
+    cfg: Settings = app.state.settings
+    audit = LogAuditSink()
+    app.state.gateway = Gateway(cfg, audit)
+    app.state.runner = ToolRunner(PatientAuthorizer(cfg), FhirClient(cfg), audit=audit)
+    app.include_router(build_router(app.state.gateway, app.state.runner))
 
     @app.middleware("http")
     async def correlation_middleware(request: Request, call_next):

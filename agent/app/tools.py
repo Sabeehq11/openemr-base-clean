@@ -18,6 +18,8 @@ from contracts import (
 from . import mappers
 from .authz import AuthzDecision, PatientAuthorizer
 from .fhir_client import FhirClient
+from .gateway import AuditSink
+from .logging_setup import correlation_id_var
 
 _UUID_CHARS = set("0123456789abcdef-")
 
@@ -39,10 +41,12 @@ def _valid_uuid(value: str) -> bool:
 
 class ToolRunner:
     def __init__(self, authorizer: PatientAuthorizer, fhir: FhirClient,
-                 today: Callable[[], date] = lambda: datetime.now(timezone.utc).date()) -> None:
+                 today: Callable[[], date] = lambda: datetime.now(timezone.utc).date(),
+                 audit: AuditSink | None = None) -> None:
         self._authz = authorizer
         self._fhir = fhir
         self._today = today
+        self._audit = audit
         self._dispatch: dict[ToolName, Callable[..., Awaitable[ToolEnvelope]]] = {
             ToolName.GET_PATIENT_SUMMARY: self.get_patient_summary,
             ToolName.GET_PROBLEMS: self.get_problems,
@@ -59,8 +63,20 @@ class ToolRunner:
             raise ToolError("invalid_input", "invalid patient identifier")
         decision = await self._authz.authorize(token, patient_uuid, claimed_user)
         if not decision.allowed or decision.patient_uuid != patient_uuid or token is None:
+            self._record("tool_denied", tool, patient_uuid, decision.user_uuid, decision.reason.value)
             raise DeniedError(decision)
-        return await self._dispatch[tool](token, patient_uuid, **args)
+        try:
+            env = await self._dispatch[tool](token, patient_uuid, **args)
+        except ToolError as e:
+            self._record("tool_error", tool, patient_uuid, decision.user_uuid, e.code)
+            raise
+        self._record("tool_call", tool, patient_uuid, decision.user_uuid, "ok", records=len(env.records))
+        return env
+
+    def _record(self, event: str, tool: ToolName, patient: str, user: str | None, outcome: str, **extra: object) -> None:
+        if self._audit is not None:
+            self._audit.record(event, tool=tool.value, patient_uuid=patient, user_uuid=user, outcome=outcome,
+                               correlation_id=correlation_id_var.get(), **extra)
 
     def _envelope(self, tool: ToolName, patient: str, records: list, notes: list[str] | None = None) -> ToolEnvelope:
         return ToolEnvelope(
