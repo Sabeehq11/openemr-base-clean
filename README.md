@@ -16,6 +16,52 @@
 
 [![Backers on Open Collective](https://opencollective.com/openemr/backers/badge.svg)](#backers) [![Sponsors on Open Collective](https://opencollective.com/openemr/sponsors/badge.svg)](#sponsors)
 
+# AgentForge: Clinical Co-Pilot (OpenEMR fork)
+
+An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 deliverables:
+
+| Doc | Purpose |
+|-----|---------|
+| [AUDIT.md](AUDIT.md) | Security, performance, architecture, data quality and compliance audit |
+| [USERS.md](USERS.md) | Target user, workflow and use cases (UC-1 to UC-4) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs |
+
+**Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
+
+## Architecture overview
+
+A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and self-hosted Langfuse traces, each tied to a correlation ID. Details, trust boundaries and tradeoffs: [ARCHITECTURE.md](ARCHITECTURE.md). Status: the agent is planned, not built. The MVP covers the audit, users and plan.
+
+## Run locally
+
+Requires Docker (about 8 GB RAM). First boot takes about 5 minutes.
+
+```bash
+./scripts/setup-local.sh      # starts OpenEMR; seeds 13 synthetic patients only if missing (safe to re-run)
+./scripts/setup-local.sh --reseed       # recreate the synthetic patients (other data untouched)
+./scripts/setup-local.sh --reset-demo   # DESTRUCTIVE: wipe DB, reload stock demo data, then reseed
+```
+
+On a first run against a fresh stack, use `--reset-demo` once to load OpenEMR's stock demo patients (pid 1-3).
+
+- App: http://localhost:8300 (login `admin` / `pass`), phpMyAdmin: http://localhost:8310
+- The stack is `docker/development-easy-light` (OpenEMR flex image + MariaDB). Dev credentials are defaults, for local use only.
+- `scripts/seed_demo_patients.py` is deterministic. It adds meds, labs, vitals and encounters, plus deliberate data-quality defects (missing DOB, a duplicate patient, stale labs) used by the audit.
+
+## Browser tests (Playwright)
+
+```bash
+cd tests/playwright && npm install && npx playwright install chromium
+npm test                                   # local stack
+BASE_URL=https://<deployed-url> npm test   # deployed app
+```
+
+## Deploy
+
+On a VPS with Docker and ports 80/443 open: `cd deploy && cp .env.example .env`, set strong passwords and `DOMAIN`, then run `./deploy.sh`. It uses Caddy for automatic HTTPS in front of OpenEMR and MariaDB.
+
+---
+
 # OpenEMR
 
 [OpenEMR](https://open-emr.org) is a Free and Open Source electronic health records and medical practice management application. It features fully integrated electronic health records, practice management, scheduling, electronic billing, internationalization, free support, a vibrant community, and a whole lot more. It runs on Windows, Linux, Mac OS X, and many other platforms.
