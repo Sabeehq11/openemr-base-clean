@@ -19,6 +19,7 @@ from . import mappers
 from .authz import AuthzDecision, PatientAuthorizer
 from .fhir_client import FhirClient
 from .gateway import AuditSink
+from . import tracing
 from .logging_setup import correlation_id_var
 
 _UUID_CHARS = set("0123456789abcdef-")
@@ -61,7 +62,8 @@ class ToolRunner:
         """Single entry point. The decision is made here, on every call, and bound to this patient."""
         decision = await self.check(tool, token, patient_uuid, claimed_user)
         try:
-            env = await self._dispatch[tool](token, patient_uuid, **args)
+            with tracing.span("tool", tool.value):
+                env = await self._dispatch[tool](token, patient_uuid, **args)
         except ToolError as e:
             self._record("tool_error", tool, patient_uuid, decision.user_uuid, e.code)
             raise

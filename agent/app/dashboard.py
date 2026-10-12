@@ -1,0 +1,99 @@
+"""GET /dashboard (HTML) and /dashboard.json: operational numbers from the trace store, plus audit-chain integrity.
+
+Fail closed: with no DASHBOARD_TOKEN configured the routes do not exist (404). Otherwise HTTP Basic auth (any user name,
+the token as password, constant-time compare). Only counts, timings and ids are shown, never prompts or chart values.
+The agent port is bound to localhost and is not published by the tunnel; this is a second lock, not the only one.
+"""
+from __future__ import annotations
+
+import base64
+import hmac
+from html import escape
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+
+from .audit import ChainedAuditSink
+from .config import Settings
+from .metrics import evaluate_alerts, summary
+from .tracing import TraceStore
+
+
+def _authorized(request: Request, token: str) -> bool:
+    if not token:
+        return False
+    h = request.headers.get("authorization", "")
+    if not h.lower().startswith("basic "):
+        return False
+    try:
+        _, _, supplied = base64.b64decode(h[6:], validate=True).decode().partition(":")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    return hmac.compare_digest(supplied.encode(), token.encode())
+
+
+def _fmt(v: object, unit: str = "") -> str:
+    if v is None:
+        return "n/a"
+    return f"{v:.1f}{unit}" if isinstance(v, float) else f"{v}{unit}"
+
+
+def render(data: dict, alerts: list[dict], chain: dict) -> str:
+    rows = "".join(
+        f"<tr><td>{escape(n)}</td><td>{d['calls']}</td><td>{d['failures']}</td><td>{_fmt(d['p95_ms'], ' ms')}</td></tr>"
+        for n, d in data["tools"].items()) or "<tr><td colspan=4>no tool calls in window</td></tr>"
+    arows = "".join(
+        f"<tr class='{'fire' if a['firing'] else 'ok'}'><td>{escape(a['name'])}</td>"
+        f"<td>{'FIRING' if a['firing'] else 'ok'}</td><td>{_fmt(a['value'])}</td><td>{a['threshold']}</td>"
+        f"<td>{a['samples']}</td><td>{escape(a['runbook'])}</td></tr>" for a in alerts)
+    rate = data["verification_pass_rate"]
+    cards = [("Requests", data["requests"]), ("Errors", data["errors"]), ("p50", _fmt(data["p50_ms"], " ms")),
+             ("p95", _fmt(data["p95_ms"], " ms")), ("Tool calls", data["tool_calls"]),
+             ("Tool failures", data["tool_failures"]), ("Retries", data["retries"]),
+             ("Verification pass", "n/a" if rate is None else f"{rate:.0%}"),
+             ("Dropped claims", data["claims_dropped"]),
+             ("Tokens in/out", f"{data['prompt_tokens']}/{data['completion_tokens']}"),
+             ("Cost", f"${data['cost_usd']:.4f}"), ("Audit chain", "intact" if chain["ok"] else "BROKEN")]
+    card_html = "".join(f"<div class=card><b>{escape(str(v))}</b><span>{escape(k)}</span></div>" for k, v in cards)
+    outcomes = ", ".join(f"{escape(k)}: {v}" for k, v in sorted(data["outcomes"].items())) or "none"
+    return (
+        "<!doctype html><meta charset=utf-8><title>Co-Pilot dashboard</title>"
+        "<style>body{font:14px system-ui;margin:24px;color:#222}.g{display:flex;flex-wrap:wrap;gap:10px}"
+        ".card{border:1px solid #ccd;border-radius:6px;padding:10px 14px;min-width:120px}.card b{display:block;font-size:20px}"
+        ".card span{color:#667}table{border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccd;padding:4px 10px}"
+        ".fire{background:#fdd}.ok td:nth-child(2){color:#080}</style>"
+        f"<h1>Clinical Co-Pilot</h1><p>Window: last {data['window_s'] // 60} min. Synthetic data only. "
+        f"Outcomes: {outcomes}. Audit rows verified: {chain['rows']}.</p><div class=g>{card_html}</div>"
+        "<h2>Alerts</h2><table><tr><th>Alert<th>State<th>Value<th>Threshold<th>Samples<th>Runbook</tr>"
+        f"{arows}</table><h2>Tools</h2><table><tr><th>Tool<th>Calls<th>Failures<th>p95</tr>{rows}</table>")
+
+
+def build_dashboard_router(settings: Settings, traces: TraceStore, audit: ChainedAuditSink) -> APIRouter:
+    router = APIRouter()
+    token = settings.dashboard_token.get_secret_value()
+
+    def gate(request: Request) -> None:
+        if not token:
+            raise HTTPException(status_code=404)
+        if not _authorized(request, token):
+            raise HTTPException(status_code=401, headers={"WWW-Authenticate": 'Basic realm="copilot"'})
+
+    def payload(window_s: int) -> tuple[dict, list[dict], dict]:
+        data = summary(traces, window_s)
+        alerts = [a.__dict__ for a in evaluate_alerts(traces)]
+        res = audit.verify()
+        return data, alerts, {"ok": res.ok, "rows": res.rows, "first_bad_seq": res.first_bad_seq}
+
+    @router.get("/dashboard", response_class=HTMLResponse)
+    async def dashboard(request: Request, window: int = 3600) -> HTMLResponse:
+        gate(request)
+        return HTMLResponse(render(*payload(max(60, min(window, 86_400)))), headers={"cache-control": "no-store"})
+
+    @router.get("/dashboard.json")
+    async def dashboard_json(request: Request, window: int = 3600) -> JSONResponse:
+        gate(request)
+        data, alerts, chain = payload(max(60, min(window, 86_400)))
+        return JSONResponse({"summary": data, "alerts": alerts, "audit_chain": chain},
+                            headers={"cache-control": "no-store"})
+
+    return router

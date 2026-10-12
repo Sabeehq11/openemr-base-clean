@@ -8,6 +8,7 @@ import httpx
 
 from contracts import ToolError
 
+from . import tracing
 from .config import Settings
 
 logger = logging.getLogger("agent.fhir")
@@ -42,6 +43,7 @@ class FhirClient:
                 else:
                     return self._entries(resource, r)
             if attempt == 1:
+                tracing.count_retry()
                 await asyncio.sleep(0.2)
         assert last is not None
         raise last

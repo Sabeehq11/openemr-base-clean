@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 import uuid
@@ -17,7 +18,10 @@ from .llm import make_llm
 from .authz import PatientAuthorizer
 from .config import Settings, get_settings
 from .fhir_client import FhirClient
+from .audit import ChainedAuditSink
+from .dashboard import build_dashboard_router
 from .gateway import Gateway, LogAuditSink
+from .tracing import TraceStore
 from .logging_setup import correlation_id_var, log_event, setup_logging
 from .tools import ToolRunner
 from .verifier import Verifier
@@ -26,19 +30,39 @@ logger = logging.getLogger("agent.http")
 _CID_RE = re.compile(r"^[A-Za-z0-9\-]{8,64}$")
 
 
+class _TeeAudit:
+    """Writes every audit event to the HMAC chain and to the structured log."""
+
+    def __init__(self, chain: ChainedAuditSink, log: LogAuditSink) -> None:
+        self.chain, self._log = chain, log
+
+    def record(self, event: str, **fields: object) -> None:
+        self.chain.record(event, **fields)
+        self._log.record(event, **fields)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     setup_logging()
     app = FastAPI(title="Clinical Co-Pilot agent", docs_url=None, redoc_url=None)
     app.state.settings = settings or get_settings()
     cfg: Settings = app.state.settings
-    audit = LogAuditSink()
+    os.makedirs(cfg.data_dir, exist_ok=True)
+    key = cfg.audit_hmac_key.get_secret_value()
+    # Fail closed on auditing: without a key there is no tamper-evident record, so the log-only sink is never used
+    # silently for clinical calls; the readiness check below reports it.
+    audit = _TeeAudit(ChainedAuditSink(f"{cfg.data_dir}/audit.db", key), LogAuditSink()) if key else LogAuditSink()
+    app.state.audit_chain = audit.chain if isinstance(audit, _TeeAudit) else None
+    app.state.traces = TraceStore(f"{cfg.data_dir}/traces.db")
     app.state.gateway = Gateway(cfg, audit)
     app.state.runner = ToolRunner(PatientAuthorizer(cfg), FhirClient(cfg), audit=audit)
     app.include_router(build_router(app.state.gateway, app.state.runner))
     app.state.finalizer = Verifier().verify  # the only route from model output to a user
     app.include_router(build_chat_router(
         app.state.gateway, app.state.runner, lambda: make_llm(cfg),
-        lambda d, e: app.state.finalizer(d, e), ConversationStore(), audit))
+        lambda d, e: app.state.finalizer(d, e), ConversationStore(), audit, app.state.traces,
+        cfg.openrouter_model if cfg.llm_provider == "openrouter" else cfg.llm_provider))
+    if isinstance(audit, _TeeAudit):
+        app.include_router(build_dashboard_router(cfg, app.state.traces, audit.chain))
 
     @app.middleware("http")
     async def correlation_middleware(request: Request, call_next):
@@ -76,6 +100,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "openemr": await _check_openemr(s),
             "llm_provider": await _check_llm(s),
             "trace_store": _check_trace_store(s),
+            "audit_chain": _check_audit(request.app.state.audit_chain),
         }
         ok = all(c["ok"] for c in checks.values())
         return JSONResponse({"status": "ready" if ok else "not_ready", "checks": checks}, status_code=200 if ok else 503)
@@ -121,6 +146,13 @@ def _check_trace_store(s: Settings) -> dict[str, object]:
         return {"ok": True, "detail": "data dir writable"}
     except OSError as e:
         return {"ok": False, "detail": type(e).__name__}
+
+
+def _check_audit(chain: ChainedAuditSink | None) -> dict[str, object]:
+    if chain is None:
+        return {"ok": False, "detail": "AUDIT_HMAC_KEY not set"}
+    res = chain.verify()
+    return {"ok": res.ok, "detail": f"{res.rows} rows verified" if res.ok else f"broken at row {res.first_bad_seq}"}
 
 
 app = create_app()

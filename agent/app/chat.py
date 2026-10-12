@@ -13,11 +13,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from contracts import AnswerDraft, ToolEnvelope, VerifiedAnswer
 
+from . import tracing
 from .conversation import ConversationStore
 from .gateway import AuditSink, Gateway
 from .llm import LLMClient
 from .loop import AgentLoop, Caller
 from .tools import ToolRunner
+from .tracing import TraceStore
 
 GENERIC_DENIAL = {"message": "You do not have access to this patient."}
 GENERIC_ERROR = {"message": "The assistant could not produce a verified answer. Please try again."}
@@ -42,7 +44,8 @@ def _raw(envelopes: list[ToolEnvelope]) -> list[dict]:
 
 
 def build_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callable[[], LLMClient],
-                      finalizer: Finalizer, store: ConversationStore, audit: AuditSink) -> APIRouter:
+                      finalizer: Finalizer, store: ConversationStore, audit: AuditSink,
+                      traces: TraceStore | None = None, model: str = "") -> APIRouter:
     router = APIRouter(prefix="/v1")
 
     @router.post("/chat")
@@ -61,6 +64,22 @@ def build_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callabl
         loop = AgentLoop(runner, llm_factory())
 
         async def stream() -> AsyncIterator[str]:
+            trace, tok = tracing.start(ctx.correlation_id, model)
+            try:
+                async for chunk in _run(trace):
+                    yield chunk
+            finally:  # runs on completion, error and client disconnect, so every request leaves a trace
+                trace.outcome = terminal_box[0]
+                if traces is not None:
+                    traces.save(trace)
+                try:
+                    tracing.end(tok)
+                except ValueError:
+                    pass
+
+        terminal_box = ["error"]
+
+        async def _run(trace: tracing.Trace) -> AsyncIterator[str]:
             yield sse("conversation", {"id": conv.id})
             terminal = "error"
             async for ev in loop.run(conv, Caller(ctx.user_uuid, ctx.token), question):
@@ -68,7 +87,10 @@ def build_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callabl
                 if kind == "step":
                     yield sse("step", {"tool": ev["tool"]})
                 elif kind == "done":
-                    answer = finalizer(ev["draft"], ev["envelopes"])
+                    with tracing.span("verifier", "verify"):
+                        answer = finalizer(ev["draft"], ev["envelopes"])
+                    trace.claims_kept = sum(1 for c in answer.claims if not c.rule_based)
+                    trace.claims_dropped = answer.dropped_count
                     payload = json.loads(answer.model_dump_json())
                     payload["notes"] = [*payload["notes"], *ev["notes"]]
                     yield sse("answer", payload)
@@ -82,6 +104,7 @@ def build_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callabl
                     terminal = "denied"
             if terminal == "error":  # "failed" (or no terminal event at all) ends here, exactly one error event
                 yield sse("error", GENERIC_ERROR)
+            terminal_box[0] = terminal
             audit.record("chat_finished", outcome=terminal, user_uuid=ctx.user_uuid, patient_uuid=patient,
                          correlation_id=ctx.correlation_id)
             yield sse("end", {})

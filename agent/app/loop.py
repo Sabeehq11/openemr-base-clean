@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from contracts import AnswerDraft, ToolError, ToolName
 
+from . import tracing
 from .conversation import Conversation
 from .llm import LLMClient, LLMError, LLMResponse, Usage
 from .prompts import RETRY_PROMPT, SYSTEM_PROMPT, TOOL_SPECS, model_view
@@ -54,7 +55,8 @@ class AgentLoop:
     async def run(self, conv: Conversation, caller: Caller, question: str) -> AsyncIterator[dict]:
         start, usage = self._clock(), Usage()
         try:  # every turn starts with a fresh decision, so nothing cached from an earlier turn can be shown without it
-            await self._runner.check(ToolName.GET_PATIENT_SUMMARY, caller.token, conv.patient_uuid, caller.user_uuid)
+            with tracing.span("authz", "patient_access"):
+                await self._runner.check(ToolName.GET_PATIENT_SUMMARY, caller.token, conv.patient_uuid, caller.user_uuid)
         except DeniedError:
             yield {"type": "denied"}
             return
@@ -70,10 +72,12 @@ class AgentLoop:
                 limit_note = "Tool step or time limit reached; some sources may not have been retrieved."
                 msgs.append({"role": "system", "content": limit_note + " Answer now with what you have."})
             try:
-                resp: LLMResponse = await self._llm.complete(msgs, [] if over else TOOL_SPECS)
+                with tracing.span("llm", "complete"):
+                    resp: LLMResponse = await self._llm.complete(msgs, [] if over else TOOL_SPECS)
             except LLMError:
                 yield {"type": "degraded", "envelopes": conv.snapshot.fresh(), "usage": usage}
                 return
+            tracing.add_usage(resp.usage.prompt_tokens, resp.usage.completion_tokens, resp.usage.cost_usd)
             usage = Usage(usage.prompt_tokens + resp.usage.prompt_tokens,
                           usage.completion_tokens + resp.usage.completion_tokens, usage.cost_usd + resp.usage.cost_usd)
             if resp.tool_calls and not over:
