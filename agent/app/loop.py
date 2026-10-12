@@ -92,7 +92,8 @@ class AgentLoop:
                         if result["type"] == "denied":
                             return
                         result = result["content"]
-                    yield {"type": "step", "tool": call.name}
+                    if call.name in _TOOLS:  # a made-up tool name is never echoed to the user
+                        yield {"type": "step", "tool": call.name}
                     conv.messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
                 continue
             draft = parse_draft(resp.text)

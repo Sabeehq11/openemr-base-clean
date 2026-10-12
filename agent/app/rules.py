@@ -148,7 +148,8 @@ def run_rules(envelopes: list[ToolEnvelope], today: date) -> list[RuleFinding]:
 # Output rules: the answer may not diagnose or direct treatment. Matching is conservative and deliberately broad.
 _FORBIDDEN = [
     re.compile(r"\b(diagnos(is|ed|e)|likely has|consistent with|suggests? (a )?diagnosis of|differential)\b", re.I),
-    re.compile(r"\b(start|initiate|begin|stop|discontinue|hold|increase|decrease|titrate|switch to|prescribe)\b"
+    re.compile(r"\b(start(?:ing)?|initiat(?:e|ing)|begin(?:ning)?|stop(?:ping)?|discontinu(?:e|ing)|hold(?:ing)?|increas(?:e|ing)|"
+               r"decreas(?:e|ing)|titrat(?:e|ing)|switch(?:ing)? to|prescrib(?:e|ing))\b"
                r"[^.]{0,60}\b(\w+(in|ol|il|ide|one|pril|sartan|statin|mab|cillin|formin)|mg|dose|medication|drug)\b", re.I),
     re.compile(r"\b(should|recommend|advise|consider)\b[^.]{0,40}\b(take|taking|dose|dosage|mg|treat|treatment)\b", re.I),
     re.compile(r"\b\d+(\.\d+)?\s?(mg|mcg|units?|ml)\b[^.]{0,20}\b(daily|bid|tid|qd|once|twice|per day)\b", re.I),
