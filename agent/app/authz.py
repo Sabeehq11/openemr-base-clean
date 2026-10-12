@@ -44,6 +44,7 @@ class AuthzDecision:
     allowed: bool
     reason: Reason
     user_uuid: str | None = None
+    patient_uuid: str | None = None
 
 
 def _deny(reason: Reason, user: str | None = None) -> AuthzDecision:
@@ -144,4 +145,4 @@ class PatientAuthorizer:
             return _deny(Reason.LOOKUP_FAILED, sub)
         if sub not in members:
             return _deny(Reason.NOT_ON_CARE_TEAM, sub)
-        return AuthzDecision(True, Reason.ALLOWED, sub)
+        return AuthzDecision(True, Reason.ALLOWED, sub, patient_uuid)
