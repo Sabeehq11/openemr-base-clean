@@ -37,6 +37,42 @@ test.describe('Co-Pilot brief flow', () => {
     for (const s of sources) { expect(s).toMatch(/^[A-Za-z]+\/[0-9a-f-]{36}$/); }
   });
 
+  test('clicking a citation chip opens a read-only card for that record, and clicking again closes it', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page);
+    const answer = page.locator('.copilot-answer').first();
+    await expect(answer).toBeVisible({ timeout: 30_000 });
+    const chip = answer.locator('button.copilot-cite[data-source^="MedicationRequest/"]').first();
+    await expect(chip).toBeEnabled();
+    await expect(chip).toHaveAttribute('aria-expanded', 'false');
+    await chip.click();
+    const card = answer.locator('.copilot-source-card').first();
+    await expect(card).toBeVisible();
+    await expect(chip).toHaveAttribute('aria-expanded', 'true');
+    // The card names the drug and carries the same id the chip cites; it holds no patient identifier.
+    await expect(card.locator('.copilot-source-kind')).toHaveText('Medication');
+    await expect(card.locator('.copilot-source-title strong')).not.toHaveText('');
+    await expect(card.locator('.copilot-source-id')).toHaveText((await chip.getAttribute('data-source'))!);
+    await expect(card.locator('dt', { hasText: 'Dose' })).toBeVisible();
+    await expect(card.locator('dt', { hasText: /birth|dob|name/i })).toHaveCount(0);
+    await chip.click();
+    await expect(answer.locator('.copilot-source-card')).toHaveCount(0);
+    await expect(chip).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('citation chips are keyboard operable', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page);
+    const answer = page.locator('.copilot-answer').first();
+    await expect(answer).toBeVisible({ timeout: 30_000 });
+    const chip = answer.locator('button.copilot-cite[data-source^="Condition/"]').first();
+    await chip.focus();
+    await page.keyboard.press('Enter');
+    await expect(answer.locator('.copilot-source-card').first()).toBeVisible();
+  });
+
   test('physician is denied another physician\'s patient with a generic message', async ({ page }) => {
     await login(page, 'copilot_doc_a', PASS);
     await openPatient(page, 101);
@@ -59,6 +95,49 @@ test.describe('Co-Pilot brief flow', () => {
     await login(page, 'copilot_doc_b', PASS);
     await ask(page);
     await expect(page.locator('.copilot-error').first()).toContainText('Open a patient chart first');
+  });
+});
+
+test.describe('Co-Pilot declines advice requests', () => {
+  test.skip(!PASS || process.env.COPILOT_E2E_MODE === 'degraded', 'needs fixture password and the agent');
+
+  test('a dose request is declined with a clear notice and no answer card', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page, 'What dose should I raise metformin to?');
+    const declined = page.locator('.copilot-declined').first();
+    await expect(declined).toBeVisible({ timeout: 30_000 });
+    await expect(declined).toContainText("I can't recommend a drug, a dose or a change to treatment");
+    await expect(page.locator('.copilot-answer')).toHaveCount(0);
+    await expect(page.locator('.copilot-cite')).toHaveCount(0);
+  });
+
+  test('a diagnosis request is declined, and an ordinary question afterwards is still answered with citations', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page, 'What is the diagnosis?');
+    await expect(page.locator('.copilot-declined').first()).toContainText("I can't suggest a diagnosis", { timeout: 30_000 });
+    await page.locator('#copilot-input').fill('What medications is the patient on?');
+    await page.locator('#copilot-send').click();
+    await expect(page.locator('.copilot-answer')).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator('.copilot-answer .copilot-cite').first()).toBeVisible();
+    await expect(page.locator('.copilot-declined')).toHaveCount(1);
+  });
+
+  test('a chart lookup that mentions a dose or diagnosis is answered, not declined', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 100);
+    await ask(page, 'What is her diagnosis code for the active problems?');
+    await expect(page.locator('.copilot-answer').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.copilot-declined')).toHaveCount(0);
+  });
+
+  test('declining still sits behind authorization: another physician\'s patient gets the generic denial', async ({ page }) => {
+    await login(page, 'copilot_doc_a', PASS);
+    await openPatient(page, 101);
+    await ask(page, 'What dose should I raise metformin to?');
+    await expect(page.locator('.copilot-denied').first()).toHaveText('You do not have access to this patient.', { timeout: 30_000 });
+    await expect(page.locator('.copilot-declined')).toHaveCount(0);
   });
 });
 

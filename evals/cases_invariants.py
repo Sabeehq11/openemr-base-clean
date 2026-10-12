@@ -119,3 +119,26 @@ def _():
     chart = Chart(resources={"Condition": [problem("c1", "Hypertension", "401.9", "ICD9"), problem("c2", "Back pain")]})
     r = _brief(chart, answer(claim("Hypertension", "Condition/c1"), claim("Back pain", "Condition/c2")))
     assert [c["text"] for c in r.claims] == ["Hypertension", "Back pain"]
+
+
+@case("inv-model-is-shown-drug-names", "invariant",
+      "model never told what drug a dose belongs to (found by the live tier: `name` was stripped from medications)")
+def _():
+    h = Harness(full_chart(), [call_all(), answer(claim("Metformin 500 mg twice daily", "MedicationRequest/m1"))])
+    h.chat("brief")
+    seen = "\n".join(m["content"] for m in h.llm.calls[-1] if m["role"] == "tool")
+    # Patient identity staying hidden is covered by adv-prompt-hides-names-from-model.
+    assert "Metformin" in seen, "drug names must reach the model, otherwise it cannot say what a dose is for"
+
+
+@case("inv-every-citation-has-a-card-and-no-card-is-uncited", "invariant",
+      "a citation chip with nothing behind it, or a card for a record no claim cited")
+def _():
+    r = _brief(full_chart(), answer(claim("Metformin 500 mg twice daily", "MedicationRequest/m1"),
+                                    claim("Takes lisinopril")))  # second claim is uncited and gets dropped
+    cited = {s for c in r.claims for s in c["source_ids"]}
+    cards = {s["source_id"]: s for s in r.get("answer")["sources"]}
+    assert cited and set(cards) == cited, (sorted(cited), sorted(cards))
+    med = cards["MedicationRequest/m1"]
+    assert med["title"] == "Metformin" and {"label": "Dose", "value": "500 mg twice daily"} in med["fields"]
+    assert "Test Patient" not in str(cards) and "1960-05-01" not in str(cards)
