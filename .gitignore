@@ -52,3 +52,9 @@ compose.override.yml
 tmp/
 .webpack-cache/
 deploy/.env
+
+# Clinical Co-Pilot agent
+agent/.venv/
+agent/data/
+agent/.pytest_cache/
+__pycache__/

@@ -1,0 +1,18 @@
+# Agent service joined to the local OpenEMR dev network.
+# Start: docker compose -f agent/docker-compose.yml up -d --build  (from the repo root)
+services:
+  agent:
+    build: .
+    env_file: .env
+    environment:
+      OPENEMR_BASE_URL: https://openemr
+      DATA_DIR: /srv/agent/data
+    # Bound to localhost only: the agent is never exposed directly to the network.
+    ports: ["127.0.0.1:8400:8400"]
+    volumes: [agent_data:/srv/agent/data]
+    networks: [oe]
+volumes: {agent_data: {}}
+networks:
+  oe:
+    external: true
+    name: development-easy-light_default
