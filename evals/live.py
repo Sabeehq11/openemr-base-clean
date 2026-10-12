@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import time
 import traceback
 
@@ -101,6 +102,8 @@ def run_live() -> int:
         return 2
     cap = float(os.environ.get("EVAL_MAX_USD", "1.00"))
     spent, results = 0.0, []
+    global _BASELINE
+    _BASELINE = _trace_dbs()  # only trace stores created by this run count toward the cap
     for id, cat, guards, fn in LIVE:
         if spent >= cap:
             results.append({"id": id, "category": cat, "guards": guards, "passed": False, "ms": 0,
@@ -124,11 +127,18 @@ def run_live() -> int:
     return 1 if failed else 0
 
 
-def _spent() -> float:
+_BASELINE: set[str] = set()
+
+
+def _trace_dbs() -> set[str]:
     import glob
+    return set(glob.glob(os.path.join(tempfile.gettempdir(), "eval-*", "traces.db")))
+
+
+def _spent() -> float:
     import sqlite3
     total = 0.0
-    for db in glob.glob("/tmp/eval-*/traces.db") + glob.glob(os.path.join(os.environ.get("TMPDIR", "/tmp"), "eval-*/traces.db")):
+    for db in _trace_dbs() - _BASELINE:
         try:
             total += sqlite3.connect(db).execute("select coalesce(sum(cost_usd),0) from traces").fetchone()[0]
         except sqlite3.Error:

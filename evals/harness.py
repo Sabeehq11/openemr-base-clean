@@ -79,8 +79,9 @@ class Harness:
     def __init__(self, chart: Chart, script: list | None = None, allowed: set[str] | None = None,
                  llm=None, settings_overrides: dict | None = None) -> None:
         self.tmp = tempfile.mkdtemp(prefix="eval-")
-        s = Settings(data_dir=self.tmp, audit_hmac_key=SecretStr("k" * 32), module_signing_secret=SecretStr(SECRET),
-                     llm_provider="stub", openemr_base_url="http://oe", tool_timeout_s=1.0, **(settings_overrides or {}))
+        base = dict(data_dir=self.tmp, audit_hmac_key=SecretStr("k" * 32), module_signing_secret=SecretStr(SECRET),
+                    llm_provider="stub", openemr_base_url="http://oe", tool_timeout_s=1.0)
+        s = Settings(**{**base, **(settings_overrides or {})})  # overrides win (the live tier switches the provider)
         self.app = create_app(s)
         self.app.state.gateway._clock = lambda: NOW
         runner = self.app.state.runner
