@@ -137,3 +137,18 @@ def test_malformed_chat_requests_are_400_after_signature_check():
     assert chat(c, question="").status_code == 400
     assert chat(c, question="x" * 1001).status_code == 400
     assert c.post("/v1/chat", json={"patient_uuid": PID, "question": "hi"}).status_code == 401
+
+
+def test_real_verifier_drops_an_invented_value_end_to_end():
+    from app.verifier import Verifier
+    invented = json.dumps({"claims": [
+        {"text": "Problem: Condition item", "kind": "fact", "source_ids": ["Condition/r1"]},
+        {"text": "Potassium was 9.9", "kind": "fact", "source_ids": ["Observation/r1"]}]})
+    from app.llm import ToolCall
+    llm = StubLLM([LLMResponse(tool_calls=[ToolCall("1", "get_problems", {}), ToolCall("2", "get_labs", {})]),
+                   LLMResponse(text=invented)])
+    c, _ = build(llm=llm, finalizer=Verifier().verify)
+    answer = dict(events(chat(c)))["answer"]
+    shown = [cl["text"] for cl in answer["claims"]]
+    assert "Problem: Condition item" in shown and "Potassium was 9.9" not in shown
+    assert answer["dropped_count"] == 1

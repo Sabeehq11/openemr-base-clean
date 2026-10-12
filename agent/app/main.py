@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .api import build_router
-from .chat import build_chat_router, fail_closed_finalizer
+from .chat import build_chat_router
 from .conversation import ConversationStore
 from .llm import make_llm
 from .authz import PatientAuthorizer
@@ -20,6 +20,7 @@ from .fhir_client import FhirClient
 from .gateway import Gateway, LogAuditSink
 from .logging_setup import correlation_id_var, log_event, setup_logging
 from .tools import ToolRunner
+from .verifier import Verifier
 
 logger = logging.getLogger("agent.http")
 _CID_RE = re.compile(r"^[A-Za-z0-9\-]{8,64}$")
@@ -34,7 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.gateway = Gateway(cfg, audit)
     app.state.runner = ToolRunner(PatientAuthorizer(cfg), FhirClient(cfg), audit=audit)
     app.include_router(build_router(app.state.gateway, app.state.runner))
-    app.state.finalizer = fail_closed_finalizer  # replaced by the verifier in the next build step
+    app.state.finalizer = Verifier().verify  # the only route from model output to a user
     app.include_router(build_chat_router(
         app.state.gateway, app.state.runner, lambda: make_llm(cfg),
         lambda d, e: app.state.finalizer(d, e), ConversationStore(), audit))
