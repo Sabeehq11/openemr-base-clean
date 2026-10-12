@@ -22,5 +22,5 @@ Prep: stack up, `agent/.env` set, `curl localhost:8400/ready` says ready. Log in
 5. **3:05 Refusals (30 s).** Ask for a diagnosis, then for a dose. Both refused. Ask it to ignore its rules: the chart text is treated as data.
 6. **3:35 Degraded mode (30 s).** With `LLM_PROVIDER=unavailable` the dock still shows the raw problems, medications, allergies and labs.
 7. **4:05 Observability (75 s).** Open `/dashboard` (Basic auth): requests, p50/p95, tool failures, verification pass rate, tokens and cost. Run `python -m app.cli alerts` and `verify-audit`. Show the three alert rules in `agent/RUNBOOK.md`.
-8. **5:20 Evidence (45 s).** `PYTHONPATH=agent agent/.venv/bin/python -m evals.run` (47/47, tagged by failure mode), `./scripts/e2e_copilot.sh` (16 Playwright specs), and the Bruno collection.
+8. **5:20 Evidence (45 s).** `PYTHONPATH=agent agent/.venv/bin/python -m evals.run` (56/56, tagged by failure mode), `./scripts/e2e_copilot.sh` (16 Playwright specs), and the Bruno collection.
 9. **6:05 Limits and next (45 s).** Care team is the access list; no write tools; live-model evals are on demand. Next: load tests and the cost analysis.

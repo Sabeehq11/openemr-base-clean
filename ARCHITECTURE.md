@@ -85,6 +85,7 @@ Where it runs: after generation and before anything is shown. There is no path f
    - Staleness: a lab older than its threshold (for example A1c over 6 months for a diabetic patient) is flagged.
    - Duplicate medication across the two stores.
    - Output rules: no diagnosis, no dose recommendation, no instruction to start or stop a drug. A response containing one is rejected and regenerated once, then replaced with a refusal.
+   - Advice requests: after authorization, the question itself is checked (`agent/app/advice.py`). A request for the assistant's own judgment ("what dose should I raise it to?", "what do you recommend?", "is it safe to give aspirin?") is declined with a plain notice and the model is never called. Chart lookups that reuse the same words ("what is her diagnosis code?", "did they increase the dose?") are answered. Anything that slips past the question check is still caught by the output rules above, and the physician is told that statements were withheld.
 5. **Display.** Every line shows its sources as links to the chart record. Flags come from the rules layer and are labelled as rule-based.
 
 What it catches: invented values, wrong values, claims with no source, false "none" statements, stale data presented as current, out-of-scope advice.
@@ -197,12 +198,12 @@ What exists: `agent/` (FastAPI, Pydantic v2, Python 3.12 container), `interface/
 **Verified results.**
 
 - Agent pytest: 321 passed with the live stack (`OE_LIVE=1`), including the real OAuth flow, revocation, expiry and cross-physician denial.
-- Evals, stub tier: 47/47, across invariant, boundary, conflict, authorization, adversarial and failure-injection categories ([evals/results/stub-latest.md](evals/results/stub-latest.md)). Audit findings D1 to D9 each have a case. D10 (no vitals tool) and D11 (fixed in the seeder) are not covered, and D5 is a recorded known gap.
+- Evals, stub tier: 56/56, across invariant, boundary, conflict, authorization, adversarial and failure-injection categories ([evals/results/stub-latest.md](evals/results/stub-latest.md)). Audit findings D1 to D9 each have a case. D10 (no vitals tool) and D11 (fixed in the seeder) are not covered, and D5 is a recorded known gap.
 - PHPUnit isolated: 23 tests for request signing parity, pid-to-UUID resolution and the chat proxy.
-- Playwright: 16 specs (the original 7 plus dock, citations, follow-up, denials, markup safety and LLM-down mode).
+- Playwright: 24 tests (the original 7 plus dock, clickable citation cards, advice declines, follow-up, denials, markup safety and LLM-down mode).
 - Bruno HTTP collection: 12 assertions ([docs/api-collection/copilot](docs/api-collection/copilot)).
 
 **Known limits carried forward.** The care team is the access list, so care-team edits are an access-control change and
 are not yet audited. Any care-team practitioner is admitted, not only physicians. Load testing and the AI cost
 analysis are Checkpoint 3 work; per-request tokens and cost are already stored in traces for it. The live-Sonnet eval
-tier is on demand and its results are not part of the 47/47 figure.
+tier is on demand and its results are not part of the 56/56 figure.
