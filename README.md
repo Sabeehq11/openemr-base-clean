@@ -24,14 +24,30 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 |-----|---------|
 | [AUDIT.md](AUDIT.md) | Security, performance, architecture, data quality and compliance audit |
 | [USERS.md](USERS.md) | Target user, workflow and use cases (UC-1 to UC-4) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs (section 12 = as built) |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs (section 12 = Checkpoint 2 as built, section 13 = Checkpoint 3) |
+| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Load-test baselines (10 and 50 users), bottleneck analysis, rerun commands |
+| [docs/AI_COST_ANALYSIS.md](docs/AI_COST_ANALYSIS.md) | Measured cost per request, 100 to 100K user projections, architecture changes per tier |
 | [agent/README.md](agent/README.md) | Co-Pilot setup guide, tests, endpoints, observability |
 
 **Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
 
 ## Architecture overview
 
-A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and self-hosted Langfuse traces, each tied to a correlation ID. Details, trust boundaries and tradeoffs: [ARCHITECTURE.md](ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard and evals are built (Checkpoint 2). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
+A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and a SQLite trace store (served at `/dashboard`; Langfuse is not deployed), each tied to one correlation ID that also goes out on every call to OpenEMR and the model provider. Details, trust boundaries and tradeoffs: [ARCHITECTURE.md](ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard, evals and load tests are built (Checkpoints 1 to 3). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
+
+## Run the agent
+
+After OpenEMR is up (below), the agent is a separate container. Short version, full steps in [agent/README.md](agent/README.md):
+
+```bash
+cp agent/.env.example agent/.env      # fill in the secrets; LLM_PROVIDER=stub needs no model key
+docker compose -f agent/docker-compose.yml up -d --build
+curl localhost:8400/ready             # checks OpenEMR, the LLM provider, the data directory and the audit chain
+cd agent && python -m pytest -q       # unit tests, no network; evals: PYTHONPATH=agent python -m evals.run
+```
+
+Evals run on demand (stub tier under pytest, live tier with a spend cap); they are not wired into a CI workflow.
+The runnable API collection, including signed requests, is in [docs/api-collection/copilot](docs/api-collection/copilot/README.md).
 
 ## Run locally
 

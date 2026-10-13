@@ -11,6 +11,8 @@ from datetime import date
 
 from contracts import Allergy, LabResult, Medication, ToolEnvelope, ToolName
 
+from .monitoring import evidence_gaps
+
 ALLERGEN_TABLE_VERSION = "2026-10-v1"
 
 # allergen keyword -> drug names (lowercase) that belong to the same class. Reviewed list, common classes only.
@@ -136,13 +138,21 @@ def duplicate_medications(meds: list[Medication]) -> list[RuleFinding]:
                         tuple(m.source_id for m in ms)) for ms in by_name.values() if len(ms) > 1]
 
 
+def monitoring_gaps(envelopes: list[ToolEnvelope]) -> list[RuleFinding]:
+    """An evidence gap, never a clinical requirement: it says only that no such result is in the retrieved lab results."""
+    return [RuleFinding("monitoring_evidence_gap",
+                        f"No {label} result is in the retrieved lab results for the active medication"
+                        f"{'s' if ' and ' in drugs or ', ' in drugs else ''} {drugs}.", ids)
+            for drugs, label, ids in evidence_gaps(envelopes)]
+
+
 def run_rules(envelopes: list[ToolEnvelope], today: date) -> list[RuleFinding]:
     by_tool = {e.tool: e.records for e in envelopes}
     labs = by_tool.get(ToolName.GET_LABS, [])
     meds = by_tool.get(ToolName.GET_MEDICATIONS, [])
     allergies = by_tool.get(ToolName.GET_ALLERGIES, [])
     return [*lab_flag_findings(labs), *stale_labs(labs, today), *duplicate_medications(meds),
-            *allergy_conflicts(allergies, meds)]
+            *allergy_conflicts(allergies, meds), *monitoring_gaps(envelopes)]
 
 
 # Output rules: the answer may not diagnose or direct treatment. Matching is conservative and deliberately broad.

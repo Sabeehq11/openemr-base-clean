@@ -138,6 +138,25 @@
         log.scrollTop = log.scrollHeight;
     }
 
+    // A refusal, followed by any recorded medications the server fetched and cited. Same claim rows and source chips as an
+    // answer; an older response with only a message renders as plain text.
+    function renderDeclined(data) {
+        var box = el('div', 'copilot-msg copilot-declined');
+        box.appendChild(el('p', 'copilot-claim', data.message));
+        var sources = indexSources(data.sources);
+        (data.claims || []).forEach(function (c) {
+            var wrap = el('div', 'copilot-claim-wrap');
+            var row = el('p', 'copilot-claim copilot-' + c.kind);
+            row.appendChild(el('span', 'copilot-claim-text', c.text));
+            (c.source_ids || []).forEach(function (s) { row.appendChild(chip(s, wrap, sources)); });
+            wrap.insertBefore(row, wrap.firstChild);
+            box.appendChild(wrap);
+        });
+        (data.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); });
+        log.appendChild(box);
+        log.scrollTop = log.scrollHeight;
+    }
+
     function renderDegraded(data) {
         var box = el('div', 'copilot-msg copilot-degraded');
         box.appendChild(el('p', 'copilot-claim', data.message || 'The language model is unavailable. Showing chart data only.'));
@@ -158,7 +177,7 @@
         else if (event === 'step') { state.status.textContent = 'Checking ' + String(data.tool).replace(/_/g, ' ') + '...'; }
         else if (event === 'answer') { renderAnswer(data); state.done = true; }
         else if (event === 'degraded') { renderDegraded(data); state.done = true; }
-        else if (event === 'declined') { addMsg('copilot-declined', data.message); state.done = true; }
+        else if (event === 'declined') { renderDeclined(data); state.done = true; }
         else if (event === 'denied') { addMsg('copilot-denied', data.message); state.done = true; }
         else if (event === 'error') { addMsg('copilot-error', data.message); state.done = true; }
     }

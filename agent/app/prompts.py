@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from contracts import PatientSummary, ToolEnvelope, ToolName, VerifiedAnswer, VerifiedClaim
+from contracts import PatientSummary, ToolEnvelope, ToolName, VerifiedAnswer, VerifiedClaim, input_schema
 
 PATIENT_PLACEHOLDER = "[PATIENT]"
 
@@ -20,26 +20,34 @@ Rules:
 - If the user still asks for a diagnosis, a drug choice or a dose, say in one plain sentence that you cannot give
   recommendations and only report the chart, then state only the relevant recorded facts, each with its source.
   Never answer such a question by hinting at what the clinician should do.
+- If asked about medications or concerns to review, fetch the medication list (and allergies and labs when the
+  question is about concerns), then answer directly: first one fact per current medication with its recorded dose
+  text and status, then only concerns that a cited record itself shows (an abnormal or stale lab, an allergy
+  entry, a duplicate entry). Rule-based flags are added by the system; do not restate them or invent your own.
+  Never state a drug interaction, contraindication or risk from general knowledge; if no record shows a concern,
+  say plainly that the retrieved records show none to review. Missing evidence is reported by the system.
+  Never say what a drug requires, how risky it is or what should be monitored; the system reports which expected
+  results are absent from the retrieved labs.
 - If a source was unavailable, say which one and do not fill the gap.
 - Keep each claim to one short factual statement.""".replace("{placeholder}", PATIENT_PLACEHOLDER)
 
 RETRY_PROMPT = ('Your last reply was not valid. Reply with ONLY the JSON object {"claims":[{"text":...,"kind":...,'
                 '"source_ids":[...]}]} and nothing else.')
 
-_NO_ARG = {"type": "object", "properties": {}, "additionalProperties": False}
+_DESCRIPTIONS = {
+    ToolName.GET_PATIENT_SUMMARY: "Age and sex of the open patient.",
+    ToolName.GET_PROBLEMS: "Problem list.",
+    ToolName.GET_MEDICATIONS: "Medication list (prescriptions store).",
+    ToolName.GET_ALLERGIES: "Allergy list. Empty means not documented.",
+    ToolName.GET_LABS: "Laboratory results, newest first.",
+    ToolName.GET_CHANGES_SINCE: "Chart entries dated on or after a date.",
+}
 
+# Generated from the input contracts in agent/contracts/tools.py, so the schema the model sees cannot drift from the
+# schema the runner enforces.
 TOOL_SPECS: list[dict] = [
-    {"type": "function", "function": {"name": n, "description": d, "parameters": p}}
-    for n, d, p in [
-        (ToolName.GET_PATIENT_SUMMARY.value, "Age and sex of the open patient.", _NO_ARG),
-        (ToolName.GET_PROBLEMS.value, "Problem list.", _NO_ARG),
-        (ToolName.GET_MEDICATIONS.value, "Medication list (prescriptions store).", _NO_ARG),
-        (ToolName.GET_ALLERGIES.value, "Allergy list. Empty means not documented.", _NO_ARG),
-        (ToolName.GET_LABS.value, "Laboratory results, newest first.", _NO_ARG),
-        (ToolName.GET_CHANGES_SINCE.value, "Chart entries dated on or after a date.",
-         {"type": "object", "properties": {"since": {"type": "string", "description": "ISO date YYYY-MM-DD"}},
-          "required": ["since"], "additionalProperties": False}),
-    ]
+    {"type": "function", "function": {"name": t.value, "description": _DESCRIPTIONS[t], "parameters": input_schema(t)}}
+    for t in ToolName
 ]
 
 

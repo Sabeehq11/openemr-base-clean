@@ -1,0 +1,27 @@
+# Separate agent instance for load tests: own DATA_DIR volume (demo traces and audit chain stay clean), rate limit off.
+# Start (from repo root), stub model:
+#   docker compose -p agent-load -f loadtest/docker-compose.yml up -d --build
+# Mock model:  add  -f loadtest/docker-compose.mock.yml  (dummy key, base URL points at the local mock)
+# Real model:  LOAD_PROVIDER=openrouter docker compose -p agent-load -f loadtest/docker-compose.yml up -d --force-recreate
+#              (the key comes from agent/.env through env_file; nothing here reads or prints it)
+# The default provider is stub, so a real-model run never starts by accident.
+services:
+  agent-load:
+    container_name: agent-load
+    build: ../agent
+    env_file: ../agent/.env
+    environment:
+      OPENEMR_BASE_URL: https://openemr
+      DATA_DIR: /srv/agent/data
+      RATE_LIMIT_PER_MIN: ${LOAD_RATE_LIMIT:-0}
+      MAX_INFLIGHT_CHATS: ${LOAD_MAX_INFLIGHT:-0}
+      LLM_PROVIDER: ${LOAD_PROVIDER:-stub}
+    ports: ["127.0.0.1:8401:8400"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: [load_data:/srv/agent/data]
+    networks: [oe]
+volumes: {load_data: {}}
+networks:
+  oe:
+    external: true
+    name: development-easy-light_default

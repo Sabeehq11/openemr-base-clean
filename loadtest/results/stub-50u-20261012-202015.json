@@ -1,0 +1,200 @@
+{
+  "data_source": "stub",
+  "model": "stub",
+  "users": 50,
+  "duration_s": 329.4,
+  "requests": 1466,
+  "rps": 4.45,
+  "error_rate": 0.9495,
+  "outcomes": {
+    "declined": 13,
+    "denied": 1417,
+    "answer": 36
+  },
+  "unexpected": {
+    "UC-2->denied": 270,
+    "UC-1->denied": 722,
+    "declined->denied": 25,
+    "UC-3->denied": 252,
+    "UC-4->denied": 123
+  },
+  "latency_ms": {
+    "p50": 6381.1,
+    "p95": 25823.7,
+    "p99": 40232.2
+  },
+  "first_event_ms": {
+    "p50": 24.0,
+    "p95": 295.5
+  },
+  "by_use_case": {
+    "UC-1": {
+      "n": 738,
+      "p50": 6396.3,
+      "p95": 24866.1
+    },
+    "UC-2": {
+      "n": 279,
+      "p50": 6484.4,
+      "p95": 26261.9
+    },
+    "UC-3": {
+      "n": 256,
+      "p50": 6473.5,
+      "p95": 28292.7
+    },
+    "UC-4": {
+      "n": 130,
+      "p50": 6325.2,
+      "p95": 27006.3
+    },
+    "declined": {
+      "n": 38,
+      "p50": 6078.5,
+      "p95": 8144.8
+    },
+    "denied": {
+      "n": 25,
+      "p50": 5865.0,
+      "p95": 7438.6
+    }
+  },
+  "docker": {
+    "agent-load": {
+      "cpu_avg_pct": 27.8,
+      "cpu_max_pct": 60.5,
+      "mem_avg_mib": 68.5,
+      "mem_max_mib": 68.8,
+      "samples": 72
+    },
+    "development-easy-light-openemr-1": {
+      "cpu_avg_pct": 808.3,
+      "cpu_max_pct": 1046.83,
+      "mem_avg_mib": 2282.9,
+      "mem_max_mib": 2645.0,
+      "samples": 72
+    },
+    "development-easy-light-mysql-1": {
+      "cpu_avg_pct": 74.2,
+      "cpu_max_pct": 138.48,
+      "mem_avg_mib": 502.0,
+      "mem_max_mib": 514.4,
+      "samples": 72
+    }
+  },
+  "spans": {
+    "authz:patient_access": {
+      "n": 1466,
+      "p50": 5754.02,
+      "p95": 6613.25,
+      "errors": 959
+    },
+    "llm:complete": {
+      "n": 530,
+      "p50": 0.03,
+      "p95": 0.13,
+      "errors": 0
+    },
+    "tool:get_allergies": {
+      "n": 52,
+      "p50": 2127.48,
+      "p95": 3620.73,
+      "errors": 0
+    },
+    "tool:get_labs": {
+      "n": 36,
+      "p50": 1379.68,
+      "p95": 4192.22,
+      "errors": 0
+    },
+    "tool:get_medications": {
+      "n": 91,
+      "p50": 3421.17,
+      "p95": 4190.92,
+      "errors": 0
+    },
+    "tool:get_problems": {
+      "n": 184,
+      "p50": 3325.75,
+      "p95": 4099.79,
+      "errors": 0
+    },
+    "verifier:verify": {
+      "n": 36,
+      "p50": 0.52,
+      "p95": 2.01,
+      "errors": 0
+    }
+  },
+  "spend_usd": null,
+  "target_summary": {
+    "window_s": 86400,
+    "requests": 4622,
+    "outcomes": {
+      "answer": 538,
+      "declined": 56,
+      "denied": 4028
+    },
+    "errors": 0,
+    "p50_ms": 6169.92,
+    "p95_ms": 27720.62,
+    "tool_calls": 2841,
+    "tool_failures": 0,
+    "tools": {
+      "get_allergies": {
+        "calls": 592,
+        "failures": 0,
+        "p95_ms": 3457.55
+      },
+      "get_labs": {
+        "calls": 532,
+        "failures": 0,
+        "p95_ms": 3589.55
+      },
+      "get_medications": {
+        "calls": 715,
+        "failures": 0,
+        "p95_ms": 4002.94
+      },
+      "get_problems": {
+        "calls": 1002,
+        "failures": 0,
+        "p95_ms": 3880.02
+      }
+    },
+    "retries": 1,
+    "claims_kept": 4770,
+    "claims_dropped": 0,
+    "verification_pass_rate": 1.0,
+    "prompt_tokens": 26900,
+    "completion_tokens": 10760,
+    "cost_usd": 0.0,
+    "cost_per_request_usd": 0.0
+  },
+  "target_alerts": [
+    {
+      "name": "high_latency_p95",
+      "firing": true,
+      "value": 25074.0,
+      "threshold": 12000.0,
+      "samples": 1397,
+      "runbook": "RUNBOOK.md#high_latency_p95"
+    },
+    {
+      "name": "high_error_rate",
+      "firing": false,
+      "value": 0.0,
+      "threshold": 0.05,
+      "samples": 2749,
+      "runbook": "RUNBOOK.md#high_error_rate"
+    },
+    {
+      "name": "high_tool_failure_rate",
+      "firing": false,
+      "value": 0.0,
+      "threshold": 0.1,
+      "samples": 568,
+      "runbook": "RUNBOOK.md#high_tool_failure_rate"
+    }
+  ]
+}

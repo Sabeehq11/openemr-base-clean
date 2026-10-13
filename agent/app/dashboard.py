@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from .audit import ChainedAuditSink
+from .chat import LoadGauge
 from .config import Settings
 from .metrics import evaluate_alerts, summary
 from .tracing import TraceStore
@@ -38,7 +39,15 @@ def _fmt(v: object, unit: str = "") -> str:
     return f"{v:.1f}{unit}" if isinstance(v, float) else f"{v}{unit}"
 
 
-def render(data: dict, alerts: list[dict], chain: dict) -> str:
+DEFAULT_REFRESH_S = 15
+
+
+def clamp_refresh(seconds: int) -> int:
+    """0 turns auto-refresh off; anything else is kept between 5 s and 5 min."""
+    return 0 if seconds <= 0 else max(5, min(seconds, 300))
+
+
+def render(data: dict, alerts: list[dict], chain: dict, load: dict | None = None, refresh_s: int = 0) -> str:
     rows = "".join(
         f"<tr><td>{escape(n)}</td><td>{d['calls']}</td><td>{d['failures']}</td><td>{_fmt(d['p95_ms'], ' ms')}</td></tr>"
         for n, d in data["tools"].items()) or "<tr><td colspan=4>no tool calls in window</td></tr>"
@@ -54,21 +63,28 @@ def render(data: dict, alerts: list[dict], chain: dict) -> str:
              ("Dropped claims", data["claims_dropped"]),
              ("Tokens in/out", f"{data['prompt_tokens']}/{data['completion_tokens']}"),
              ("Cost", f"${data['cost_usd']:.4f}"), ("Audit chain", "intact" if chain["ok"] else "BROKEN")]
+    if load is not None:
+        cap = f" (cap {load['cap']})" if load["cap"] else " (no cap)"
+        cards += [("In flight now" + cap, load["inflight"]), ("Shed since start", load["shed"])]
     card_html = "".join(f"<div class=card><b>{escape(str(v))}</b><span>{escape(k)}</span></div>" for k, v in cards)
     outcomes = ", ".join(f"{escape(k)}: {v}" for k, v in sorted(data["outcomes"].items())) or "none"
+    meta = f"<meta http-equiv=refresh content={refresh_s}>" if refresh_s else ""
     return (
-        "<!doctype html><meta charset=utf-8><title>Co-Pilot dashboard</title>"
+        f"<!doctype html><meta charset=utf-8>{meta}<title>Co-Pilot dashboard</title>"
         "<style>body{font:14px system-ui;margin:24px;color:#222}.g{display:flex;flex-wrap:wrap;gap:10px}"
         ".card{border:1px solid #ccd;border-radius:6px;padding:10px 14px;min-width:120px}.card b{display:block;font-size:20px}"
         ".card span{color:#667}table{border-collapse:collapse;margin:10px 0}td,th{border:1px solid #ccd;padding:4px 10px}"
         ".fire{background:#fdd}.ok td:nth-child(2){color:#080}</style>"
         f"<h1>Clinical Co-Pilot</h1><p>Window: last {data['window_s'] // 60} min. Synthetic data only. "
-        f"Outcomes: {outcomes}. Audit rows verified: {chain['rows']}.</p><div class=g>{card_html}</div>"
+        f"Outcomes: {outcomes}. Audit rows verified: {chain['rows']}. "
+        + (f"Refreshes every {refresh_s} s.</p>" if refresh_s else "Auto-refresh off.</p>")
+        + f"<div class=g>{card_html}</div>"
         "<h2>Alerts</h2><table><tr><th>Alert<th>State<th>Value<th>Threshold<th>Samples<th>Runbook</tr>"
         f"{arows}</table><h2>Tools</h2><table><tr><th>Tool<th>Calls<th>Failures<th>p95</tr>{rows}</table>")
 
 
-def build_dashboard_router(settings: Settings, traces: TraceStore, audit: ChainedAuditSink) -> APIRouter:
+def build_dashboard_router(settings: Settings, traces: TraceStore, audit: ChainedAuditSink,
+                           load: LoadGauge | None = None) -> APIRouter:
     router = APIRouter()
     token = settings.dashboard_token.get_secret_value()
 
@@ -85,15 +101,18 @@ def build_dashboard_router(settings: Settings, traces: TraceStore, audit: Chaine
         return data, alerts, {"ok": res.ok, "rows": res.rows, "first_bad_seq": res.first_bad_seq}
 
     @router.get("/dashboard", response_class=HTMLResponse)
-    async def dashboard(request: Request, window: int = 3600) -> HTMLResponse:
+    async def dashboard(request: Request, window: int = 3600, refresh: int = DEFAULT_REFRESH_S) -> HTMLResponse:
         gate(request)
-        return HTMLResponse(render(*payload(max(60, min(window, 86_400)))), headers={"cache-control": "no-store"})
+        data, alerts, chain = payload(max(60, min(window, 86_400)))
+        page = render(data, alerts, chain, load.snapshot() if load else None, clamp_refresh(refresh))
+        return HTMLResponse(page, headers={"cache-control": "no-store"})
 
     @router.get("/dashboard.json")
     async def dashboard_json(request: Request, window: int = 3600) -> JSONResponse:
         gate(request)
         data, alerts, chain = payload(max(60, min(window, 86_400)))
-        return JSONResponse({"summary": data, "alerts": alerts, "audit_chain": chain},
+        return JSONResponse({"summary": data, "alerts": alerts, "audit_chain": chain,
+                             "load": load.snapshot() if load else None},
                             headers={"cache-control": "no-store"})
 
     return router

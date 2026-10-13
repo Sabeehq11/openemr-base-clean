@@ -7,12 +7,15 @@ Instrumentation is a no-op when no trace is active, so tools and the FHIR client
 from __future__ import annotations
 
 import contextvars
+import logging
 import sqlite3
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Iterator
+
+logger = logging.getLogger("agent.trace")
 
 _current: contextvars.ContextVar["Trace | None"] = contextvars.ContextVar("current_trace", default=None)
 
@@ -69,9 +72,13 @@ def span(kind: str, name: str) -> Iterator[None]:
         status = "error"
         raise
     finally:
+        ms = round((time.perf_counter() - t0) * 1000, 2)
         tr = current()
         if tr is not None:
-            tr.spans.append((kind, name, round((time.perf_counter() - t0) * 1000, 2), status))
+            tr.spans.append((kind, name, ms, status))
+        # One structured line per step. The correlation ID is added by the log formatter. Names, timings and status
+        # only: never prompts, responses or chart values.
+        logger.info("span", extra={"fields": {"span_kind": kind, "span_name": name, "ms": ms, "status": status}})
 
 
 class TraceStore:

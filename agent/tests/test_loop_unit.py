@@ -84,7 +84,10 @@ async def test_model_sees_tool_data_but_not_name_or_birth_date():
 async def test_tool_arguments_cannot_change_the_patient():
     loop, llm, conv, _, calls = build([call("get_problems", patient_uuid="99999999-0000-0000-0000-000000000000"), final()])
     await run(loop, conv)
-    assert calls and all("99999999" not in c for c in calls)
+    # The extra argument is rejected by the tool's input contract, so nothing is fetched at all, and the model is told why.
+    assert calls == [] and all("99999999" not in c for c in calls)
+    tool_msg = [m for m in llm.calls[1] if m["role"] == "tool"][0]["content"]
+    assert json.loads(tool_msg)["error"] == "invalid_input"
 
 
 async def test_unknown_tool_is_reported_to_model_not_executed():

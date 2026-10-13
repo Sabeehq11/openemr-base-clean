@@ -70,3 +70,76 @@ def test_provider_selection():
     assert isinstance(make_llm(Settings(llm_provider="stub")), DemoStubLLM)
     assert isinstance(make_llm(Settings(llm_provider="unavailable")), UnavailableLLM)
     assert isinstance(make_llm(Settings(llm_provider="openrouter")), OpenRouterClient)
+
+
+# --- retry: measured need, see docs/PERFORMANCE.md (5% provider 429s became 5% degraded answers) ---
+
+@pytest.fixture
+def fast_retry(monkeypatch):
+    monkeypatch.setattr("app.llm.RETRY_BASE_S", 0.0)
+
+
+@pytest.mark.parametrize("bad", [429, 500, 503])
+async def test_one_retry_on_429_and_5xx_then_succeeds(fast_retry, bad):
+    from app import tracing
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        return httpx.Response(bad) if len(calls) == 1 else ok("fine")
+
+    trace, tok = tracing.start("cid-retry-0001", "m/x")
+    try:
+        r = await client(h).complete([], [])
+    finally:
+        tracing.end(tok)
+    assert r.text == "fine" and len(calls) == 2 and trace.retries == 1
+
+
+async def test_retry_is_only_once(fast_retry):
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        return httpx.Response(429)
+
+    with pytest.raises(LLMError):
+        await client(h).complete([], [])
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize("status", [400, 401, 404])
+async def test_no_retry_on_client_errors(fast_retry, status):
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        return httpx.Response(status)
+
+    with pytest.raises(LLMError):
+        await client(h).complete([], [])
+    assert len(calls) == 1
+
+
+async def test_read_timeout_is_not_retried(fast_retry):
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        raise httpx.ReadTimeout("slow", request=req)
+
+    with pytest.raises(LLMError):
+        await client(h).complete([], [])
+    assert len(calls) == 1
+
+
+async def test_connect_error_is_retried_once(fast_retry):
+    calls = []
+
+    def h(req):
+        calls.append(1)
+        if len(calls) == 1:
+            raise httpx.ConnectError("refused", request=req)
+        return ok("back")
+
+    assert (await client(h).complete([], [])).text == "back" and len(calls) == 2

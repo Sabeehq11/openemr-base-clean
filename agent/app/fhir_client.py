@@ -10,6 +10,7 @@ from contracts import ToolError
 
 from . import tracing
 from .config import Settings
+from .logging_setup import outbound_headers
 
 logger = logging.getLogger("agent.fhir")
 
@@ -28,7 +29,7 @@ class FhirClient:
                 async with httpx.AsyncClient(
                     verify=self._s.openemr_verify_tls, timeout=self._s.tool_timeout_s, transport=self._transport
                 ) as c:
-                    r = await c.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
+                    r = await c.get(url, params=params, headers=outbound_headers({"Authorization": f"Bearer {token}"}))
             except httpx.TimeoutException:
                 last = ToolError("timeout", f"{resource} lookup timed out", retryable=True)
             except httpx.HTTPError:
@@ -69,7 +70,7 @@ class FhirClient:
             async with httpx.AsyncClient(
                 verify=self._s.openemr_verify_tls, timeout=self._s.tool_timeout_s, transport=self._transport
             ) as c:
-                r = await c.get(url, headers={"Authorization": f"Bearer {token}"})
+                r = await c.get(url, headers=outbound_headers({"Authorization": f"Bearer {token}"}))
         except httpx.TimeoutException as e:
             raise ToolError("timeout", f"{resource} lookup timed out", retryable=True) from e
         except httpx.HTTPError as e:

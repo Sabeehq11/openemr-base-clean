@@ -1,0 +1,35 @@
+meta {
+  name: Tool get_changes_since (signed)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{agent}}/v1/tools/get_changes_since
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "since": "2000-01-01"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.tool: eq get_changes_since
+  res.body.patient_uuid: eq {{patient_uuid}}
+}
+
+tests {
+  test("every record carries a source id", function () {
+    const b = res.getBody();
+    expect(b.source_ids).to.have.lengthOf(b.records.length);
+  });
+}
+
+docs {
+  The typed tool contract: since is a real date. A bad date or an extra argument returns 400 invalid_input.
+}

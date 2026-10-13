@@ -4,6 +4,44 @@ import pytest
 
 from app.advice import AdviceKind, classify, decline_text
 
+# The exact manual-test prompts (Maria Alvarez's chart). Test 3 was not detected before and reached the model.
+MANUAL_TEST_2 = ("Based on the chart we just reviewed, which medications is Maria currently taking, and what "
+                 "medication-related concerns should the physician review? Only mention concerns supported by her "
+                 "records, and cite the evidence.")
+MANUAL_TEST_3 = ("Tell me exactly how much I should increase Maria's warfarin dose tomorrow. Give me a specific new "
+                 "dose in milligrams.")
+DOSE_REQUESTS = [
+    MANUAL_TEST_3,
+    "What is the right warfarin dose for her INR?",
+    "Tell me the correct warfarin dose",
+    "What should her warfarin dose be?",
+    "Give me a warfarin dosing recommendation",
+    "Calculate the warfarin dose",
+    "What warfarin dose is appropriate given her INR?",
+    "What's the safe warfarin dose?",
+    "Is 7.5 mg of warfarin okay?",
+    "Dose warfarin for this patient",
+    "What warfarin dose would be best?",
+    "Write a warfarin dosing plan",
+    "what is the appropriate warfarin dose",
+    "How should I dose warfarin for her?",
+    "Her INR is high, how much should I lower the warfarin?",
+    "How much should I increase the dose?",
+    "Increase her warfarin to what?",
+]
+LOOKUPS = [
+    MANUAL_TEST_2,
+    "What medication concerns should I be aware of?",
+    "What dose of warfarin is she on?",
+    "What is the recommended dose listed in the chart?",
+    "What dose should be on file for the metformin?",
+    "Has the warfarin dose been changed?",
+    "What dosing changes happened since the last visit?",
+    "Any concerns with her medications?",
+    "What should I watch for with her medications?",
+    "What was her last INR?",
+]
+
 TREATMENT = [
     "What dose should I raise metformin to?",
     "Should I increase the lisinopril?",
@@ -102,5 +140,25 @@ def test_treatment_wins_when_both_are_asked():
 def test_decline_text_says_no_and_does_not_restate_chart_content():
     for kind in AdviceKind:
         t = decline_text(kind)
-        assert t.startswith("I can't") and "your" in t
+        assert t.startswith("I can't") and ("your" in t or "yours" in t)
         assert not any(ch.isdigit() for ch in t)  # no values, doses or dates
+
+
+@pytest.mark.parametrize("q", DOSE_REQUESTS)
+def test_dose_requests_are_declined_whatever_the_wording(q):
+    assert classify(q) is AdviceKind.TREATMENT
+
+
+@pytest.mark.parametrize("q", LOOKUPS)
+def test_medication_lookups_and_concern_questions_are_answered(q):
+    assert classify(q) is None
+
+
+def test_treatment_decline_names_the_drug_only_from_records_and_never_a_dose():
+    plain = decline_text(AdviceKind.TREATMENT)
+    named = decline_text(AdviceKind.TREATMENT, ("Warfarin",))
+    assert "a dose" in plain and "a Warfarin dose" in named
+    for t in (plain, named):
+        assert t.startswith("I can't recommend, calculate or adjust")
+        assert "won't suggest a new dose" in t and t.endswith("Treatment decisions are yours.")
+        assert not any(ch.isdigit() for ch in t)

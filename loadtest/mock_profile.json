@@ -1,0 +1,5 @@
+{
+  "note": "Derived from loadtest real-calibration (12 requests, anthropic/claude-sonnet-4.5, 2026-10-12). Latency: llm:complete p50 turn 1 ~2.8 s, turn 2 ~7.5 s (briefs 8.7 s, short lookups 5-6.6 s). Totals per 2-turn request: ~3.9k prompt / ~1.1k completion tokens; the per-turn split below is an ESTIMATE (traces store totals only). Cost is always 0 in the mock.",
+  "turn1": {"latency_s": 2.8, "prompt_tokens": 1300, "completion_tokens": 100},
+  "turn2": {"latency_s": 7.5, "prompt_tokens": 2650, "completion_tokens": 1000}
+}

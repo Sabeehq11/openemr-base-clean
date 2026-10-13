@@ -13,6 +13,8 @@ from contracts import (
     ToolEnvelope,
     ToolError,
     ToolName,
+    check_output,
+    validate_input,
 )
 
 from . import mappers
@@ -62,8 +64,9 @@ class ToolRunner:
         """Single entry point. The decision is made here, on every call, and bound to this patient."""
         decision = await self.check(tool, token, patient_uuid, claimed_user)
         try:
+            inp = validate_input(tool, args)  # after authorization, so a denial is never replaced by an input error
             with tracing.span("tool", tool.value):
-                env = await self._dispatch[tool](token, patient_uuid, **args)
+                env = check_output(tool, await self._dispatch[tool](token, patient_uuid, **inp.model_dump()))
         except ToolError as e:
             self._record("tool_error", tool, patient_uuid, decision.user_uuid, e.code)
             raise
@@ -113,14 +116,7 @@ class ToolRunner:
         labs = sorted((mappers.lab(r) for r in rows), key=lambda x: x.collected or date.min, reverse=True)
         return self._envelope(ToolName.GET_LABS, patient, labs)
 
-    async def get_changes_since(self, token: str, patient: str, since: date | str | None = None) -> ToolEnvelope:
-        if isinstance(since, str):
-            try:
-                since = date.fromisoformat(since)
-            except ValueError as e:
-                raise ToolError("invalid_input", "since must be an ISO date (YYYY-MM-DD)") from e
-        if not isinstance(since, date):
-            raise ToolError("invalid_input", "since is required")
+    async def get_changes_since(self, token: str, patient: str, since: date) -> ToolEnvelope:
         enc, labs, meds, probs = await asyncio.gather(
             self._fhir.search("Encounter", token, {"patient": patient}),
             self._fhir.search("Observation", token, {"patient": patient, "category": "laboratory"}),

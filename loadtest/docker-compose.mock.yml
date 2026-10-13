@@ -1,0 +1,8 @@
+# Overlay for `mock` runs: the agent talks to loadtest/mock_openrouter.py on the host with a dummy key, so the real
+# key is never sent anywhere and no money can be spent.
+#   LOAD_PROVIDER=openrouter docker compose -p agent-load -f loadtest/docker-compose.yml -f loadtest/docker-compose.mock.yml up -d --force-recreate
+services:
+  agent-load:
+    environment:
+      OPENROUTER_API_KEY: mock-key-not-real
+      OPENROUTER_BASE_URL: http://host.docker.internal:8499/v1

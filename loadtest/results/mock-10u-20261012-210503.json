@@ -1,0 +1,205 @@
+{
+  "data_source": "mock",
+  "model": "mock",
+  "users": 10,
+  "duration_s": 319.5,
+  "requests": 207,
+  "rps": 0.65,
+  "error_rate": 0.0,
+  "outcomes": {
+    "declined": 4,
+    "answer": 200,
+    "denied": 3
+  },
+  "unexpected": {},
+  "latency_ms": {
+    "p50": 13439.7,
+    "p95": 15681.0,
+    "p99": 15903.1
+  },
+  "first_event_ms": {
+    "p50": 5.0,
+    "p95": 31.8
+  },
+  "by_use_case": {
+    "UC-1": {
+      "n": 106,
+      "p50": 13438.5,
+      "p95": 15687.0
+    },
+    "UC-2": {
+      "n": 41,
+      "p50": 13496.4,
+      "p95": 15242.8
+    },
+    "UC-3": {
+      "n": 38,
+      "p50": 13439.7,
+      "p95": 15799.3
+    },
+    "UC-4": {
+      "n": 15,
+      "p50": 14006.0,
+      "p95": 15904.4
+    },
+    "declined": {
+      "n": 4,
+      "p50": 432.9,
+      "p95": 763.9
+    },
+    "denied": {
+      "n": 3,
+      "p50": 424.9,
+      "p95": 625.3
+    }
+  },
+  "docker": {
+    "agent-load": {
+      "cpu_avg_pct": 5.0,
+      "cpu_max_pct": 21.88,
+      "mem_avg_mib": 82.0,
+      "mem_max_mib": 82.9,
+      "samples": 71
+    },
+    "development-easy-light-openemr-1": {
+      "cpu_avg_pct": 106.1,
+      "cpu_max_pct": 501.46,
+      "mem_avg_mib": 565.6,
+      "mem_max_mib": 711.1,
+      "samples": 71
+    },
+    "development-easy-light-mysql-1": {
+      "cpu_avg_pct": 12.8,
+      "cpu_max_pct": 60.17,
+      "mem_avg_mib": 603.8,
+      "mem_max_mib": 612.7,
+      "samples": 71
+    }
+  },
+  "spans": {
+    "authz:patient_access": {
+      "n": 207,
+      "p50": 395.02,
+      "p95": 632.35,
+      "errors": 3
+    },
+    "llm:complete": {
+      "n": 400,
+      "p50": 3503.32,
+      "p95": 9083.44,
+      "errors": 0
+    },
+    "tool:get_allergies": {
+      "n": 197,
+      "p50": 212.9,
+      "p95": 305.73,
+      "errors": 0
+    },
+    "tool:get_labs": {
+      "n": 197,
+      "p50": 234.0,
+      "p95": 328.81,
+      "errors": 0
+    },
+    "tool:get_medications": {
+      "n": 197,
+      "p50": 245.4,
+      "p95": 391.91,
+      "errors": 0
+    },
+    "tool:get_problems": {
+      "n": 197,
+      "p50": 225.53,
+      "p95": 297.97,
+      "errors": 0
+    },
+    "verifier:verify": {
+      "n": 200,
+      "p50": 0.36,
+      "p95": 1.02,
+      "errors": 0
+    }
+  },
+  "spend_usd": null,
+  "target_summary": {
+    "window_s": 86400,
+    "requests": 6931,
+    "outcomes": {
+      "answer": 1455,
+      "declined": 116,
+      "denied": 4066,
+      "degraded": 1294
+    },
+    "errors": 0,
+    "p50_ms": 5991.91,
+    "p95_ms": 21357.66,
+    "tool_calls": 6493,
+    "tool_failures": 0,
+    "tools": {
+      "get_allergies": {
+        "calls": 1495,
+        "failures": 0,
+        "p95_ms": 3003.88
+      },
+      "get_changes_since": {
+        "calls": 8,
+        "failures": 0,
+        "p95_ms": 369.88
+      },
+      "get_labs": {
+        "calls": 1438,
+        "failures": 0,
+        "p95_ms": 1985.68
+      },
+      "get_medications": {
+        "calls": 1618,
+        "failures": 0,
+        "p95_ms": 3716.77
+      },
+      "get_patient_summary": {
+        "calls": 29,
+        "failures": 0,
+        "p95_ms": 326.7
+      },
+      "get_problems": {
+        "calls": 1905,
+        "failures": 0,
+        "p95_ms": 3685.28
+      }
+    },
+    "retries": 1,
+    "claims_kept": 12813,
+    "claims_dropped": 23,
+    "verification_pass_rate": 0.998208164537239,
+    "prompt_tokens": 2465415,
+    "completion_tokens": 674142,
+    "cost_usd": 0.853425,
+    "cost_per_request_usd": 0.000123
+  },
+  "target_alerts": [
+    {
+      "name": "high_latency_p95",
+      "firing": true,
+      "value": 15676.14,
+      "threshold": 12000.0,
+      "samples": 196,
+      "runbook": "RUNBOOK.md#high_latency_p95"
+    },
+    {
+      "name": "high_error_rate",
+      "firing": false,
+      "value": 0.0,
+      "threshold": 0.05,
+      "samples": 380,
+      "runbook": "RUNBOOK.md#high_error_rate"
+    },
+    {
+      "name": "high_tool_failure_rate",
+      "firing": false,
+      "value": 0.0,
+      "threshold": 0.1,
+      "samples": 1448,
+      "runbook": "RUNBOOK.md#high_tool_failure_rate"
+    }
+  ]
+}

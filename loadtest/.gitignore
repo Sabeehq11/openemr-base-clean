@@ -1,0 +1,2 @@
+# Discarded runs (wrong accounting, dead mock, overlap) stay local. The final reports in results/ are committed.
+results/superseded/

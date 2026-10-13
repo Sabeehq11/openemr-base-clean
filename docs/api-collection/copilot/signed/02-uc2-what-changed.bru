@@ -1,0 +1,34 @@
+meta {
+  name: UC-2 what changed (signed)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{agent}}/v1/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "What changed since 2026-09-01?",
+    "conversation_id": null
+  }
+}
+
+tests {
+  const body = String(res.getBody());
+  test("status 200", function () { expect(res.getStatus()).to.equal(200); });
+  test("a verified answer is returned, not a refusal", function () {
+    expect(body).to.contain("event: answer");
+    expect(body).to.not.contain("event: denied");
+  });
+}
+
+docs {
+  UC-2 through the chat path. The stub model always reads the four core tools whatever the question, so this proves
+  the signed path and the answer shape. The get_changes_since tool itself is called in 05-tool-changes-since.
+  The real-model version of UC-2, which does call get_changes_since, is a live eval case (evals/live.py).
+}

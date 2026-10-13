@@ -1,0 +1,33 @@
+meta {
+  name: Tampered signature is refused (signed, then altered)
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{agent}}/v1/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "Give me a brief of this patient.",
+    "conversation_id": null
+  }
+}
+
+script:pre-request {
+  // Runs after the folder script has signed the request. Flip one character, which must break verification.
+  const sig = req.getHeader("x-copilot-signature");
+  req.setHeader("x-copilot-signature", (sig[0] === "0" ? "1" : "0") + sig.slice(1));
+}
+
+assert {
+  res.status: eq 401
+}
+
+docs {
+  Proves the signature is really checked: a correctly signed request passes (01), a one-character change does not.
+}

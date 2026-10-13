@@ -53,7 +53,21 @@ Needs Docker. The host needs only Python 3.10+ if you want to run the tests outs
 | Evals, live Sonnet | `EVAL_MAX_USD=1.00 PYTHONPATH=agent agent/.venv/bin/python -m evals.run --tier live` | Same invariants on real model output, spend capped, opt-in |
 | Module (PHPUnit isolated) | `docker exec development-easy-light-openemr-1 sh -c 'cd /var/www/localhost/htdocs/openemr && vendor/bin/phpunit -c phpunit-isolated.xml --filter Copilot'` | Request signing parity, pid to UUID resolution |
 | Browser | `./scripts/e2e_copilot.sh` | Playwright, 24 tests (OpenEMR smoke plus Co-Pilot dock, citations, declines, denials, LLM-down), normal and LLM-down modes |
-| HTTP checks | `npx @usebruno/cli run --env local --insecure` in `docs/api-collection/copilot` | Liveness, refusals, dashboard |
+| HTTP checks, including signed requests | `eval "$(scripts/copilot_collection_env.sh)"`, then `npx @usebruno/cli run --env stub --env-file environments/stub.bru --insecure` in `docs/api-collection/copilot` | Liveness, refusals, dashboard, signed UC-1/2/4, denial, tool contracts (stub model, no spend) |
+
+**Live tests and the database root password.** A few live tests (token revocation and expiry) change `api_token` rows
+through `docker exec ... mariadb -uroot`. That uses the `DB_ROOT_PASS` environment variable and falls back to the
+stock development password, so on an unmodified dev stack nothing is needed. If you ran `scripts/tunnel.sh harden`, the
+root password was rotated and the new value is in the git-ignored `deploy/tunnel/.env`. Load it into your shell for the
+run, without printing it:
+
+```bash
+set -a; . deploy/tunnel/.env; set +a
+cd agent && OE_LIVE=1 .venv/bin/python -m pytest
+```
+
+Without it, `test_expired_then_revoked_tokens_are_refused` fails at its first SQL statement with an access-denied error
+from MariaDB (the agent code is not involved). Never put the value in a tracked file, a command line you share, or CI logs.
 
 ## Endpoints
 
@@ -63,7 +77,7 @@ Needs Docker. The host needs only Python 3.10+ if you want to run the tests outs
 | `GET /ready` | operators | none; reports OpenEMR, LLM provider, trace store, audit chain |
 | `POST /v1/chat` (SSE) | the OpenEMR module only | HMAC signature (integrity) plus the user's bearer token and a patient-level decision on every call |
 | `POST /v1/tools/{name}` | the module / tests | same as chat |
-| `GET /dashboard`, `/dashboard.json` | operator | HTTP Basic, password `DASHBOARD_TOKEN`; 404 when unset |
+| `GET /dashboard`, `/dashboard.json` | operator | HTTP Basic, password `DASHBOARD_TOKEN`; 404 when unset. Shows in-flight and shed chats; the page refreshes every 15 s (`?refresh=N`, 0 = off) |
 
 The agent port is not published through the tunnel. Only OpenEMR is.
 
@@ -76,10 +90,29 @@ The agent port is not published through the tunnel. Only OpenEMR is.
   JSONL for storage the app cannot rewrite.
 - **Dashboard:** requests by outcome, errors, p50 and p95, tool calls and failures per tool, retries, verification
   pass rate and dropped claims, tokens, cost per request, alert states.
-- **Alerts:** `python -m app.cli alerts` (exit 0 clear, 2 firing). Three rules: p95 latency above 12 s over 5 minutes,
+- **Alerts:** `python -m app.cli alerts` (exit 0 clear, 2 firing). Three rules: p95 latency above 25 s over 5 minutes,
   error rate above 5% over 10 minutes, tool failure rate above 10% over 10 minutes. Each has a response in RUNBOOK.md.
+
+## Load tests and performance (Checkpoint 3)
+
+- Baselines, bottleneck analysis and rerun commands: [../docs/PERFORMANCE.md](../docs/PERFORMANCE.md).
+- Cost per request and projections: [../docs/AI_COST_ANALYSIS.md](../docs/AI_COST_ANALYSIS.md).
+- Harness: [../loadtest/](../loadtest/). It runs against a separate `agent-load` container (own data volume), so demo
+  traces and the audit chain are untouched. Every report is labelled `stub`, `mock` or `real`. `real` runs need
+  `LOADTEST_MAX_USD` (at most 2.00) and a fixed request count.
+
+Behaviour added by the measurements:
+
+- **LLM retry:** one retry with 0.5-1.0 s jittered backoff on a 429, a 5xx or a connect failure. Read timeouts are not
+  retried. Counted in the trace `retries` field.
+- **`MAX_INFLIGHT_CHATS`** (default `0`, off): over the limit, `/v1/chat` returns `503` with `Retry-After: 5`. Off by
+  default because the 50-user results were mixed (PERFORMANCE.md).
+- **p95 latency alert** moved from 12 s to 25 s; healthy real-model requests have p95 of about 19 s.
+
+Constraints that stay: one uvicorn worker (nonce cache, rate limiter and conversation store are per-process memory),
+authorization is a fresh decision on every call (no cache), and OpenEMR, not the agent, is the first thing to saturate.
 
 ## Not in this checkpoint
 
-Load tests (10 and 50 concurrent users) and the formal AI cost analysis are deferred to Checkpoint 3. Per-request
-token and cost data is already stored in the traces for that work.
+Public deployment, a 50-user run against the real model, and the comparison of recorded spend with the OpenRouter
+account page (see the cost analysis, "What was not measured").

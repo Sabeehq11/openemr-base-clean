@@ -21,7 +21,7 @@ from enum import Enum
 import httpx
 
 from .config import Settings
-from .logging_setup import log_event
+from .logging_setup import log_event, outbound_headers
 
 logger = logging.getLogger("agent.authz")
 
@@ -72,6 +72,7 @@ class PatientAuthorizer:
                         "client_id": self._s.oauth_client_id,
                         "client_secret": self._s.oauth_client_secret.get_secret_value(),
                     },
+                    headers=outbound_headers(),
                 )
             body = r.json()
         except (httpx.HTTPError, ValueError):
@@ -87,7 +88,7 @@ class PatientAuthorizer:
                 r = await c.get(
                     f"{self._s.openemr_base_url}/apis/default/fhir/CareTeam",
                     params={"patient": patient_uuid},
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers=outbound_headers({"Authorization": f"Bearer {token}"}),
                 )
             if r.status_code != 200:
                 return None

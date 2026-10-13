@@ -1,0 +1,22 @@
+meta {
+  name: Tool call for another physician's patient is 403 (signed)
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{agent}}/v1/tools/get_problems
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{other_patient_uuid}}"
+  }
+}
+
+assert {
+  res.status: eq 403
+  res.body.error: eq forbidden
+}

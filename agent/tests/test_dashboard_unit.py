@@ -65,3 +65,48 @@ def test_dashboard_html_escapes_values(tmp_path):
             "tools": {"<b>x": {"calls": 1, "failures": 0, "p95_ms": 1.0}}}
     html = render(data, [], {"ok": True, "rows": 0})
     assert "<script>" not in html and "&lt;script&gt;" in html and "<b>x" not in html
+
+
+# --- load numbers and auto-refresh -------------------------------------------------------------------------------
+
+def test_dashboard_json_reports_inflight_and_shed(tmp_path):
+    s = Settings(data_dir=str(tmp_path), dashboard_token=SecretStr("t"), audit_hmac_key=SecretStr("k" * 32),
+                 module_signing_secret=SecretStr("s"), llm_provider="stub", max_inflight_chats=7)
+    app = create_app(s)
+    app.state.load.inflight, app.state.load.shed = 3, 5
+    j = TestClient(app).get("/dashboard.json", headers=basic("t")).json()
+    assert j["load"] == {"inflight": 3, "shed": 5, "cap": 7}
+
+
+def test_dashboard_html_shows_load_cards_with_cap(tmp_path):
+    html = client(tmp_path).get("/dashboard", headers=basic("dash-token")).text
+    assert "In flight now (no cap)" in html and "Shed since start" in html
+
+
+def test_dashboard_refreshes_every_15_seconds_by_default(tmp_path):
+    html = client(tmp_path).get("/dashboard", headers=basic("dash-token")).text
+    assert "<meta http-equiv=refresh content=15>" in html and "Refreshes every 15 s" in html
+
+
+def test_dashboard_refresh_is_configurable_clamped_and_can_be_off(tmp_path):
+    c = client(tmp_path)
+    get = lambda q: c.get(f"/dashboard?{q}", headers=basic("dash-token")).text  # noqa: E731
+    assert "content=60>" in get("refresh=60")
+    assert "content=5>" in get("refresh=1")  # floor, so the page cannot hammer the agent
+    assert "content=300>" in get("refresh=99999")
+    off = get("refresh=0")
+    assert "http-equiv=refresh" not in off and "Auto-refresh off" in off
+
+
+def test_refresh_never_bypasses_auth_and_json_does_not_refresh(tmp_path):
+    c = client(tmp_path)
+    assert c.get("/dashboard?refresh=5").status_code == 401  # the reload carries the same Basic credentials
+    assert "http-equiv" not in c.get("/dashboard.json", headers=basic("dash-token")).text
+
+
+def test_dashboard_shows_counts_only_no_identifiers(tmp_path):
+    c = client(tmp_path)
+    c.app.state.load.inflight = 1
+    body = c.get("/dashboard.json", headers=basic("dash-token")).text
+    assert set(c.get("/dashboard.json", headers=basic("dash-token")).json()["load"]) == {"inflight", "shed", "cap"}
+    assert "uuid" not in body.lower()

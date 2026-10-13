@@ -1,0 +1,27 @@
+meta {
+  name: Tool with an invalid date is rejected (signed)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{agent}}/v1/tools/get_changes_since
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "since": "yesterday"
+  }
+}
+
+assert {
+  res.status: eq 400
+  res.body.error: eq invalid_input
+}
+
+docs {
+  Input validation comes from the tool's Pydantic contract (agent/contracts/tools.py).
+}

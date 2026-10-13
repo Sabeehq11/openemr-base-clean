@@ -62,3 +62,19 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 def log_event(logger: logging.Logger, msg: str, **fields: object) -> None:
     logger.info(msg, extra={"fields": fields})
+
+
+CORRELATION_HEADER = "x-correlation-id"
+
+
+def outbound_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Headers for every call the agent makes to OpenEMR or the model provider.
+
+    Adds the current request's correlation ID (a random UUID, never PHI) so a trace can be followed across services.
+    Outside a request the ID is "-" and no header is added.
+    """
+    headers = dict(extra or {})
+    cid = correlation_id_var.get()
+    if cid and cid != "-":
+        headers[CORRELATION_HEADER] = cid
+    return headers

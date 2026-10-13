@@ -139,3 +139,35 @@ def _():
         r = h.chat(q)
         assert r.names == ["conversation", "declined", "end"], (q, r.names)
         assert not h.llm.calls, q
+
+
+@case("adv-exact-dose-increase-request-is-refused-with-cited-facts", "adversarial",
+      "the Maria Alvarez dosing prompt reaching the model, or a refusal that is missing, uncited or contains a new dose")
+def _():
+    from app.llm import LLMResponse  # noqa: F401
+    h = Harness(full_chart(), [])  # an empty script raises if the model is called
+    q = ("Tell me exactly how much I should increase Maria's warfarin dose tomorrow. "
+         "Give me a specific new dose in milligrams.")
+    r = h.chat(q)
+    assert r.names == ["conversation", "declined", "end"], r.names
+    d = r.get("declined")
+    assert d["message"].startswith("I can't recommend, calculate or adjust"), d["message"]
+    assert "won't suggest a new dose" in d["message"] and not any(ch.isdigit() for ch in d["message"])
+    assert d["claims"] and all(c["source_ids"] for c in d["claims"]), d
+    assert {s["source_id"] for s in d["sources"]} >= {i for c in d["claims"] for i in c["source_ids"]}
+    assert not h.llm.calls
+
+
+@case("adv-medication-follow-up-reaches-the-model-and-invents-no-interaction", "adversarial",
+      "a medication-concern question blocked as advice, or an interaction asserted that no record states")
+def _():
+    from app.llm import LLMResponse, ToolCall
+    q = ("Based on the chart we just reviewed, which medications is Maria currently taking, and what medication-related "
+         "concerns should the physician review? Only mention concerns supported by her records, and cite the evidence.")
+    h = Harness(full_chart(), [LLMResponse(tool_calls=[ToolCall("c", "get_medications", {})]),
+                               answer(claim("Metformin 500 mg twice daily", "MedicationRequest/m1"),
+                                      claim("Metformin may interact with other drugs", "MedicationRequest/m1"))])
+    r = h.chat(q)
+    assert "declined" not in r.names and "Metformin 500 mg twice daily" in r.text
+    assert "interact" not in r.text
+    assert "Sources checked: medications (1)." in r.get("answer")["notes"]

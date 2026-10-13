@@ -45,7 +45,7 @@ def passthrough(draft, envs):
     return VerifiedAnswer(claims=[VerifiedClaim(text=c.text, source_ids=c.source_ids, kind=c.kind) for c in draft.claims])
 
 
-def build(llm=None, allow=True, finalizer=passthrough, empty=False):
+def build(llm=None, allow=True, finalizer=passthrough, empty=False, max_inflight=0, as_app=False, gauge=None):
     def h(req):
         res = req.url.path.rsplit("/", 1)[-1]
         entries = [] if empty else [{"resource": {"resourceType": res, "id": "r1", "code": {"text": f"{res} item"}}}]
@@ -56,8 +56,9 @@ def build(llm=None, allow=True, finalizer=passthrough, empty=False):
     runner = ToolRunner(Authz(allow), FhirClient(s, transport=httpx.MockTransport(h)))
     app = FastAPI()
     app.include_router(build_chat_router(Gateway(s, audit, clock=lambda: NOW), runner,
-                                         lambda: llm or DemoStubLLM(), finalizer, ConversationStore(), audit))
-    return TestClient(app), audit
+                                         lambda: llm or DemoStubLLM(), finalizer, ConversationStore(), audit,
+                                         max_inflight=max_inflight, gauge=gauge))
+    return (app if as_app else TestClient(app)), audit
 
 
 def chat(client, question="brief", patient=PID, conv=None):
@@ -204,3 +205,58 @@ def test_a_dose_lookup_is_still_answered():
     c, _ = build()
     names = [n for n, _ in events(chat(c, question="What dose of metformin is she on?"))]
     assert "answer" in names and "declined" not in names
+
+
+# --- concurrency guard: at 50 users OpenEMR saturates and authorization lookups time out, so signed, legitimate
+# --- users get false denials (docs/PERFORMANCE.md). Shedding at the door is the honest alternative.
+
+async def test_guard_sheds_over_the_limit_with_503_and_retry_after_and_releases_slots():
+    import asyncio
+
+    gate = asyncio.Event()
+
+    class Slow:
+        async def complete(self, messages, tools):
+            await gate.wait()
+            return await DemoStubLLM().complete(messages, tools)
+
+    from app.chat import LoadGauge
+
+    gauge = LoadGauge(2)
+    app, audit = build(llm=Slow(), max_inflight=2, as_app=True, gauge=gauge)
+    transport = httpx.ASGITransport(app=app)
+
+    def signed(n):
+        body = json.dumps({"patient_uuid": PID, "question": "brief", "conversation_id": None}).encode()
+        nonce = f"guard-nonce-{n:08d}"
+        sig = signing.sign(SECRET, "POST", "/v1/chat", str(NOW), nonce, body, USER, "tok")
+        return body, {"x-copilot-timestamp": str(NOW), "x-copilot-nonce": nonce, "x-copilot-signature": sig,
+                      "x-copilot-user": USER, "x-copilot-token": "tok", "content-type": "application/json"}
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+        async def post(n):
+            body, h = signed(n)
+            return await c.post("/v1/chat", content=body, headers=h)
+
+        first = [asyncio.create_task(post(i)) for i in (1, 2)]
+        await asyncio.sleep(0.3)  # both are now past the door and waiting on the model
+        assert gauge.snapshot() == {"inflight": 2, "shed": 0, "cap": 2}
+        shed = await post(3)
+        assert gauge.snapshot() == {"inflight": 2, "shed": 1, "cap": 2}
+        assert shed.status_code == 503 and shed.headers["retry-after"] == "5" and shed.json()["error"] == "overloaded"
+        gate.set()
+        done = await asyncio.gather(*first)
+        assert [r.status_code for r in done] == [200, 200]
+        assert (await post(4)).status_code == 200  # slots were released
+        assert gauge.snapshot() == {"inflight": 0, "shed": 1, "cap": 2}
+    assert [e for e, _ in audit.events].count("chat_shed") == 1
+
+
+def test_guard_disabled_by_default():
+    c, _ = build()
+    assert [chat(c).status_code for _ in range(3)] == [200, 200, 200]
+
+
+def test_unsigned_request_is_rejected_before_it_can_take_a_slot_or_be_shed():
+    c, _ = build(max_inflight=1)
+    assert c.post("/v1/chat", content=b"{}").status_code in (400, 401)

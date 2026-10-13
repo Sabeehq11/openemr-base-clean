@@ -24,7 +24,7 @@ def build_router(gateway: Gateway, runner: ToolRunner) -> APIRouter:
             tool = ToolName(tool_name)
             payload = json.loads(ctx.body or b"{}")
             patient = payload["patient_uuid"]
-            args = {k: v for k, v in payload.items() if k == "since"}
+            args = {k: v for k, v in payload.items() if k != "patient_uuid"}  # validated by the tool's contract
             if not isinstance(patient, str):
                 raise TypeError
         except (ValueError, KeyError, TypeError):

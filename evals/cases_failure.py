@@ -37,7 +37,9 @@ def _():
 def _():
     h = _failing("error", "Condition")
     r = h.chat("brief")
-    assert "500" not in r.resp.text and "Traceback" not in r.resp.text
+    import re
+    # "500 mg" is a recorded dose on a cited card, not upstream detail; any other 500 (a status code) still fails.
+    assert not re.search(r"\b500\b(?!\s*mg)", r.resp.text) and "Traceback" not in r.resp.text
 
 
 @case("fail-failed-tool-is-audited-and-traced", "failure_injection", "invisible tool failures")

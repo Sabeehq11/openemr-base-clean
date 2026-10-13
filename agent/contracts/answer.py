@@ -59,5 +59,6 @@ class VerifiedAnswer(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     claims: list[VerifiedClaim]
     dropped_count: int = 0
+    rejections: dict[str, int] = Field(default_factory=dict, description="Why claims were dropped: reason code -> count. No claim text.")
     notes: list[str] = Field(default_factory=list)
     sources: list[SourceCard] = Field(default_factory=list, description="One card per cited source id, in citation order")

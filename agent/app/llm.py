@@ -1,13 +1,19 @@
 """LLM interface. The loop only knows `LLMClient`; tests use `StubLLM`, production uses `OpenRouterClient`."""
 from __future__ import annotations
 
+import asyncio
 import json
+import random
 from dataclasses import dataclass, field
 from typing import Protocol
 
 import httpx
 
+from . import tracing
 from .config import Settings
+from .logging_setup import outbound_headers
+
+RETRY_BASE_S = 0.5  # backoff is RETRY_BASE_S plus up to the same again of jitter
 
 
 class LLMError(Exception):
@@ -74,15 +80,32 @@ class OpenRouterClient:
                          "usage": {"include": True}}
         if tools:
             payload["tools"] = tools
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as c:
-                r = await c.post(f"{self._s.openrouter_base_url}/chat/completions", json=payload,
-                                 headers={"Authorization": f"Bearer {key}"})
-        except httpx.HTTPError as e:
-            raise LLMError("language model is unavailable") from e
+        r = await self._post_with_retry(payload, key)
         if r.status_code != 200:
             raise LLMError("language model is unavailable")
         return self._parse(r)
+
+    async def _post_with_retry(self, payload: dict, key: str) -> httpx.Response:
+        """One retry, with jittered backoff, only when the provider said 'try again' (429, 5xx) or was never reached.
+        A read timeout is not retried: the request may have been processed, and a second wait would blow the deadline."""
+        for attempt in (1, 2):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as c:
+                    r = await c.post(f"{self._s.openrouter_base_url}/chat/completions", json=payload,
+                                     headers=outbound_headers({"Authorization": f"Bearer {key}"}))
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                if attempt == 2:
+                    raise LLMError("language model is unavailable") from e
+            except httpx.HTTPError as e:
+                raise LLMError("language model is unavailable") from e
+            else:
+                if r.status_code != 429 and r.status_code < 500:
+                    return r
+                if attempt == 2:
+                    return r
+            tracing.count_retry()
+            await asyncio.sleep(RETRY_BASE_S + random.uniform(0, RETRY_BASE_S))
+        raise LLMError("language model is unavailable")  # unreachable; keeps the type checker honest
 
     @staticmethod
     def _parse(r: httpx.Response) -> LLMResponse:

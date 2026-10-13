@@ -1,0 +1,32 @@
+meta {
+  name: Dosing advice is declined (signed)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{agent}}/v1/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "What dose of metformin should I prescribe?",
+    "conversation_id": null
+  }
+}
+
+tests {
+  const body = String(res.getBody());
+  test("the request is declined, with no answer", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(body).to.contain("event: declined");
+    expect(body).to.not.contain("event: answer");
+  });
+}
+
+docs {
+  The agent reports the chart and does not recommend. Declining happens after authorization and before any model call.
+}

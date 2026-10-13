@@ -1,0 +1,36 @@
+meta {
+  name: UC-4 follow-up in the same conversation (signed)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{agent}}/v1/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "And the allergies?",
+    "conversation_id": "{{conversation_id}}"
+  }
+}
+
+tests {
+  const body = String(res.getBody());
+  test("status 200 and a verified answer", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(body).to.contain("event: answer");
+  });
+  test("the conversation id from UC-1 is reused, not replaced", function () {
+    expect(bru.getVar("conversation_id")).to.be.a("string");
+    expect(body).to.contain(bru.getVar("conversation_id"));
+  });
+}
+
+docs {
+  UC-4. Reuses the conversation id captured by 01-uc1-brief. A conversation is only returned to the same user for
+  the same patient; otherwise a new id is issued, and this test would fail.
+}

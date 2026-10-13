@@ -2,6 +2,7 @@
 
   python -m evals.run                run the deterministic stub tier (no network, no cost)
   python -m evals.run --tier live    run the live-model tier (see evals/live.py; needs OPENROUTER_API_KEY, costs money)
+  python -m evals.run --tier live --only id1,id2 [--rerun]   run chosen cases and merge them into live-latest.json
 """
 from __future__ import annotations
 
@@ -62,7 +63,8 @@ def main(argv: list[str]) -> int:
     tier = argv[argv.index("--tier") + 1] if "--tier" in argv else "stub"
     if tier == "live":
         from .live import run_live
-        return run_live()
+        only = argv[argv.index("--only") + 1].split(",") if "--only" in argv else None
+        return run_live(only, rerun="--rerun" in argv)
     results = run_stub()
     path = write_report(results, "stub")
     failed = [r for r in results if not r["passed"]]

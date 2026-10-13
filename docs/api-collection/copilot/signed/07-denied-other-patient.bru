@@ -1,0 +1,34 @@
+meta {
+  name: Patient of another physician is denied (signed)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{agent}}/v1/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{other_patient_uuid}}",
+    "question": "Give me a brief of this patient.",
+    "conversation_id": null
+  }
+}
+
+tests {
+  const body = String(res.getBody());
+  test("only the generic denial is returned", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(body).to.contain("event: denied");
+    expect(body).to.contain("You do not have access to this patient.");
+    expect(body).to.not.contain("event: answer");
+  });
+}
+
+docs {
+  Valid signature, valid token, but the physician is not on this patient's care team. The same body is returned for
+  every denial reason, so a caller cannot tell "no such patient" from "not yours".
+}

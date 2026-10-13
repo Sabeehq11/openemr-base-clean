@@ -99,7 +99,8 @@ def _():
 def _():
     chart = Chart(resources={"MedicationRequest": [med("m1", "Lisinopril"), med("m2", "Lisinopril", status="stopped")]})
     r = _brief(chart, answer(claim("Lisinopril", "MedicationRequest/m1")))
-    assert not [c for c in r.claims if c["rule_based"]]
+    # No duplicate-medication flag. (An unrelated evidence-gap flag for a lab that was never recorded is allowed.)
+    assert not [c for c in r.claims if c["rule_based"] and "appears" in c["text"]], r.claims
 
 
 @case("conf-stale-a1c", "conflict", "D3 stale lab presented as current")
@@ -142,3 +143,48 @@ def _():
     med = cards["MedicationRequest/m1"]
     assert med["title"] == "Metformin" and {"label": "Dose", "value": "500 mg twice daily"} in med["fields"]
     assert "Test Patient" not in str(cards) and "1960-05-01" not in str(cards)
+
+
+@case("inv-correlation-id-follows-the-whole-request", "invariant",
+      "a request that cannot be traced end to end (ID missing from FHIR calls, trace row or audit rows)")
+def _():
+    import httpx
+
+    h = Harness(full_chart(), [call_all(), answer(claim("Metformin 500 mg twice daily", "MedicationRequest/m1"))])
+    seen: list[httpx.Request] = []
+    inner = h.app.state.runner._fhir._transport.handler
+
+    def recording(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return inner(req)
+
+    h.app.state.runner._fhir._transport = httpx.MockTransport(recording)
+    r = h.chat("brief")
+    cid = r.resp.headers["x-correlation-id"]
+    assert r.get("answer") is not None and seen
+    assert {q.headers.get("x-correlation-id") for q in seen} == {cid}  # every FHIR call carries the request's ID
+    assert [t[0] for t in h.app.state.traces.query("SELECT correlation_id FROM traces")] == [cid]
+    rows = h.app.state.audit_chain.rows()
+    assert rows and {x.get("correlation_id") for x in rows} == {cid}
+
+
+@case("inv-tool-specs-match-input-contracts", "invariant",
+      "model-facing tool schema drifting from what the runner enforces; extra arguments reaching a tool")
+def _():
+    from app.prompts import TOOL_SPECS
+    from contracts import TOOL_INPUTS, ToolName, input_schema, validate_input, ToolError
+
+    assert [s["function"]["name"] for s in TOOL_SPECS] == [t.value for t in ToolName]
+    for spec, t in zip(TOOL_SPECS, ToolName):
+        assert spec["function"]["parameters"] == input_schema(t)
+        assert set(spec["function"]["parameters"]["properties"]) == set(TOOL_INPUTS[t].model_fields)
+        assert spec["function"]["parameters"]["additionalProperties"] is False
+    # What the schema forbids, the validator rejects: no tool accepts a patient argument or an unknown field.
+    for t in ToolName:
+        extra = {"since": "2026-01-01", "patient_uuid": PID, "unexpected": 1}
+        try:
+            validate_input(t, extra)
+        except ToolError as e:
+            assert e.code == "invalid_input"
+        else:
+            raise AssertionError(f"{t.value} accepted unknown arguments")

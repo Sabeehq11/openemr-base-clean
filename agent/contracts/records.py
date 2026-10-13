@@ -92,11 +92,6 @@ class ChangeItem(_Frozen):
     changed_on: date | None
 
 
-class ChangesSince(_Frozen):
-    since: date
-    items: list[ChangeItem]
-
-
 T = TypeVar("T")
 
 

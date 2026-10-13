@@ -4,7 +4,8 @@ It yields events and ends in exactly one terminal event:
   done      -> an unverified AnswerDraft plus every envelope fetched (the verifier runs next)
   degraded  -> the model was unavailable; raw envelopes only, no prose
   denied    -> authorization refused; nothing else is revealed
-  declined  -> an authorized caller asked for a diagnosis or a treatment/dose recommendation; the model is not called
+  declined  -> an authorized caller asked for a diagnosis or a treatment/dose recommendation; the model is not called.
+              For treatment/dose requests the recorded medications are fetched through the authorized tool path.
   failed    -> the model never produced a valid structure
 """
 from __future__ import annotations
@@ -16,10 +17,10 @@ from typing import AsyncIterator
 
 from pydantic import ValidationError
 
-from contracts import AnswerDraft, ToolError, ToolName
+from contracts import AnswerDraft, ToolError, ToolName, validate_input
 
 from . import tracing
-from .advice import classify
+from .advice import AdviceKind, classify
 from .conversation import Conversation
 from .llm import LLMClient, LLMError, LLMResponse, Usage
 from .prompts import RETRY_PROMPT, SYSTEM_PROMPT, TOOL_SPECS, model_view
@@ -67,10 +68,21 @@ class AgentLoop:
             return
         advice = classify(question)
         if advice is not None:  # after authorization, so an unauthorized caller only ever sees the generic denial
-            yield {"type": "declined", "kind": advice}
+            envelope, unavailable = None, False
+            if advice is AdviceKind.TREATMENT:  # recorded medication facts go next to the refusal; the model is not called
+                try:
+                    envelope = await self._fetch(conv, caller, ToolName.GET_MEDICATIONS, {})
+                except DeniedError:
+                    yield {"type": "denied"}
+                    return
+                except ToolError:
+                    unavailable = True  # never shown as "no medications"; the refusal stands without facts
+            yield {"type": "declined", "kind": advice, "question": question, "medications": envelope,
+                   "unavailable": unavailable}
             return
         conv.messages.append({"role": "user", "content": question})
         steps, retried, limit_note = 0, False, None
+        failed: set[ToolName] = set()  # tools that errored this turn: never evidence of absence
         while True:
             over = steps >= self._max_steps or self._clock() - start > self._deadline
             msgs = [{"role": "system", "content": SYSTEM_PROMPT}, *conv.messages]
@@ -92,7 +104,7 @@ class AgentLoop:
                      "function": {"name": c.name, "arguments": json.dumps(c.arguments)}} for c in resp.tool_calls]})
                 for call in resp.tool_calls:
                     steps += 1
-                    result = await self._tool(conv, caller, call.name, call.arguments)
+                    result = await self._tool(conv, caller, call.name, call.arguments, failed)
                     if isinstance(result, dict):
                         yield result
                         if result["type"] == "denied":
@@ -113,24 +125,30 @@ class AgentLoop:
             conv.messages.append({"role": "assistant", "content": resp.text})
             notes = [limit_note] if limit_note else []
             yield {"type": "done", "draft": draft, "envelopes": conv.snapshot.fresh(), "usage": usage,
-                   "notes": notes, "steps": steps}
+                   "notes": notes, "steps": steps, "failed": frozenset(failed)}
             return
 
-    async def _tool(self, conv: Conversation, caller: Caller, name: str, args: dict):
+    async def _tool(self, conv: Conversation, caller: Caller, name: str, args: dict, failed: set[ToolName]):
         tool = _TOOLS.get(name)
         if tool is None or not isinstance(args, dict):
             return json.dumps({"error": "unknown_tool"})
-        args = {k: v for k, v in args.items() if k == "since"}
         try:
-            cached = conv.snapshot.get(tool, args)
-            if cached is not None:  # a cache hit still re-runs the authorization decision
-                await self._runner.check(tool, caller.token, conv.patient_uuid, caller.user_uuid)
-                env = cached
-            else:
-                env = await self._runner.run(tool, caller.token, conv.patient_uuid, caller.user_uuid, **args)
-                conv.snapshot.put(tool, args, env)
+            env = await self._fetch(conv, caller, tool, args)
         except DeniedError:
             return {"type": "denied", "content": ""}
         except ToolError as e:
+            failed.add(tool)
             return json.dumps({"error": e.code, "message": e.message, "unavailable": name})
+        failed.discard(tool)  # a later success this turn supersedes an earlier failure
         return model_view(env)
+
+    async def _fetch(self, conv: Conversation, caller: Caller, tool: ToolName, args: dict):
+        """One authorized read. A cache hit still re-runs the authorization decision, so it is never a bypass."""
+        args = validate_input(tool, args).model_dump(mode="json")  # extra or malformed arguments are rejected
+        cached = conv.snapshot.get(tool, args)
+        if cached is not None:
+            await self._runner.check(tool, caller.token, conv.patient_uuid, caller.user_uuid)
+            return cached
+        env = await self._runner.run(tool, caller.token, conv.patient_uuid, caller.user_uuid, **args)
+        conv.snapshot.put(tool, args, env)
+        return env

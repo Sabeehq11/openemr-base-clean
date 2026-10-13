@@ -83,3 +83,14 @@ def test_prompt_tells_the_model_to_decline_plainly_and_stay_with_the_chart():
     from app.prompts import SYSTEM_PROMPT
     flat = " ".join(SYSTEM_PROMPT.split())
     assert "cannot give recommendations" in flat and "only report the chart" in flat
+
+
+def test_prompt_grounds_medication_concerns_in_records_and_invents_nothing():
+    assert "Never state a drug interaction, contraindication or risk from general knowledge" in SYSTEM_PROMPT
+    assert "only concerns that a cited record itself shows" in SYSTEM_PROMPT
+    assert "Missing evidence is reported by the system" in SYSTEM_PROMPT
+
+
+def test_prompt_still_forbids_recommending_doses_and_carries_no_dose_value():
+    assert "do not recommend doses" in SYSTEM_PROMPT
+    assert not any(unit in SYSTEM_PROMPT.lower() for unit in (" mg", " mcg"))

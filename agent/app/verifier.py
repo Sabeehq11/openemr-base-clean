@@ -9,15 +9,34 @@ Then output rules reject diagnosis/treatment direction, and rule findings are ap
 """
 from __future__ import annotations
 
+import logging
 import re
+from collections import Counter
 from datetime import date
 
 from contracts import (AnswerDraft, Claim, ClaimKind, ToolEnvelope, ToolName, VerifiedAnswer, VerifiedClaim)
 
 from .rules import RuleFinding, run_rules, violates_output_rules
 
+logger = logging.getLogger("agent.verifier")
+
+# Fixed rejection reason codes. Only these strings and their counts ever leave the verifier.
+R_MODEL_FLAG, R_ABSENCE, R_UNCITED, R_UNKNOWN_SOURCE = "model_flag", "absence_unsupported", "uncited", "unknown_source"
+R_NUMBER, R_DATE, R_OUTPUT_RULES, R_UNSUPPORTED_ASSERTION = "number_mismatch", "date_mismatch", "output_rules", "unsupported_assertion"
+
 ADVICE_WITHHELD_NOTE = ("Some statements were withheld because they read as a diagnosis or a treatment "
                         "recommendation. This assistant only reports what is recorded in the chart.")
+# Wording that asserts a clinical relationship. No record field states one, so a model claim that uses it is kept only when a
+# cited record contains the same word; interaction and risk statements otherwise come from the deterministic rules layer.
+_CLINICAL_ASSERTION = re.compile(
+    r"\b(interact\w*|contraindicat\w*|potentiat\w*|adverse|toxic\w*|bleed\w*|risk of|increased risk|higher risk|"
+    r"drug-drug|ototox\w*|nephrotox\w*|"
+    # Memory-based pharmacology: what a drug "requires", how risky it is, what should be monitored. Records state none of it.
+    r"monitor\w*|surveillance|high[- ]risk|low[- ]risk|narrow therapeutic|therapeutic (?:index|window|range)|"
+    r"requires?|required|needs? (?:to be|regular|routine|close)|should be (?:checked|tested|monitored)|"
+    r"dangerous|unsafe|side effects?|warning)", re.I)
+UNSUPPORTED_ASSERTION_NOTE = ("Statements about interactions or risks were withheld because no record states them. "
+                              "Concerns shown are only those the records or the rule checks support.")
 _NUM = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?![\w])")
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _ABSENCE_OK = re.compile(r"\b(documented|recorded|found in the record)\b", re.I)
@@ -57,15 +76,15 @@ class Verifier:
         records = {r.source_id: r for e in envelopes for r in e.records}
         empties = {e.tool for e in envelopes if e.empty}
         kept: list[VerifiedClaim] = []
-        dropped = advice_dropped = 0
+        rejections: Counter[str] = Counter()
         for claim in draft.claims:
-            if not self._claim_ok(claim, records, empties):
-                dropped += 1
-            elif self._violates(claim, records):
-                dropped += 1
-                advice_dropped += 1
+            reason = self._reject_reason(claim, records, empties)
+            if reason:
+                rejections[reason] += 1
             else:
                 kept.append(VerifiedClaim(text=claim.text, source_ids=claim.source_ids, kind=claim.kind))
+        dropped = sum(rejections.values())
+        advice_dropped, unsupported = rejections[R_OUTPUT_RULES], rejections[R_UNSUPPORTED_ASSERTION]
         findings = run_rules(envelopes, self._today())
         flags = [self._flag(f) for f in findings]
         notes = []
@@ -74,29 +93,41 @@ class Verifier:
                          f"{'were' if dropped != 1 else 'was'} removed.")
         if advice_dropped:  # say why, so the physician is not left guessing what was withheld
             notes.append(ADVICE_WITHHELD_NOTE)
+        if unsupported:
+            notes.append(UNSUPPORTED_ASSERTION_NOTE)
         if draft.claims and not kept:
             notes.append("Limited verified information is available; see the raw sources.")
         for e in envelopes:
             notes.extend(e.notes)
-        return VerifiedAnswer(claims=[*kept, *flags], dropped_count=dropped, notes=list(dict.fromkeys(notes)))
+        if rejections:  # counts only: never the claim text, which may carry PHI
+            logger.info("claims rejected", extra={"fields": {"rejections": dict(rejections)}})
+        return VerifiedAnswer(claims=[*kept, *flags], dropped_count=dropped, notes=list(dict.fromkeys(notes)),
+                              rejections=dict(rejections))
 
     @staticmethod
     def _flag(f: RuleFinding) -> VerifiedClaim:
         return VerifiedClaim(text=f.text, source_ids=list(f.source_ids), kind=ClaimKind.FLAG, rule_based=True)
 
-    def _claim_ok(self, claim: Claim, records: dict, empties: set) -> bool:
+    def _reject_reason(self, claim: Claim, records: dict, empties: set) -> str | None:
+        """None when the claim passes; otherwise a fixed reason code (never claim text)."""
         if claim.kind is ClaimKind.FLAG:
-            return False  # flags are produced by the rules layer only
+            return R_MODEL_FLAG  # flags are produced by the rules layer only
         if claim.kind is ClaimKind.ABSENCE:
-            return self._absence_ok(claim, empties)
-        if not claim.source_ids or any(s not in records for s in claim.source_ids):
-            return False
+            return None if self._absence_ok(claim, empties) else R_ABSENCE
+        if not claim.source_ids:
+            return R_UNCITED
+        if any(s not in records for s in claim.source_ids):
+            return R_UNKNOWN_SOURCE
         haystack = _norm(" ".join(_fields(records[s]) for s in claim.source_ids))
         if not _numbers(claim.text) <= _numbers(haystack):
-            return False
+            return R_NUMBER
         if not _dates(claim.text) <= _dates(haystack):
-            return False
-        return True
+            return R_DATE
+        if self._violates(claim, records):
+            return R_OUTPUT_RULES
+        if self._unsupported_assertion(claim, records):
+            return R_UNSUPPORTED_ASSERTION
+        return None
 
     @staticmethod
     def _absence_ok(claim: Claim, empties: set) -> bool:
@@ -105,6 +136,15 @@ class Verifier:
             return False
         wanted = {tool for key, tool in _ABSENCE_TOOL.items() if key in t.lower()}
         return bool(wanted) and wanted <= empties
+
+    @staticmethod
+    def _unsupported_assertion(claim: Claim, records: dict) -> bool:
+        """True when a fact asserts an interaction or risk that none of its cited records states."""
+        words = {m.group(0).lower() for m in _CLINICAL_ASSERTION.finditer(claim.text)}
+        if not words:
+            return False
+        haystack = _norm(" ".join(_fields(records[s]) for s in claim.source_ids if s in records))
+        return not all(w in haystack for w in words)
 
     @staticmethod
     def _violates(claim: Claim, records: dict) -> bool:

@@ -1,0 +1,125 @@
+{
+  "data_source": "stub",
+  "model": "stub",
+  "users": 1,
+  "duration_s": 10.0,
+  "requests": 4,
+  "rps": 0.4,
+  "error_rate": 0.0,
+  "outcomes": {
+    "answer": 4
+  },
+  "latency_ms": {
+    "p50": 2191.0,
+    "p95": 2357.8,
+    "p99": 2357.8
+  },
+  "first_event_ms": {
+    "p50": 4.3,
+    "p95": 34.7
+  },
+  "by_use_case": {
+    "UC-1": {
+      "n": 3,
+      "p50": 2274.3,
+      "p95": 2357.8
+    },
+    "UC-2": {
+      "n": 1,
+      "p50": 2135.9,
+      "p95": 2135.9
+    }
+  },
+  "docker": {
+    "agent-load": {
+      "cpu_avg_pct": 2.3,
+      "cpu_max_pct": 2.72,
+      "mem_avg_mib": 46.7,
+      "mem_max_mib": 46.8,
+      "samples": 3
+    },
+    "development-easy-light-openemr-1": {
+      "cpu_avg_pct": 60.0,
+      "cpu_max_pct": 77.97,
+      "mem_avg_mib": 472.0,
+      "mem_max_mib": 475.1,
+      "samples": 3
+    },
+    "development-easy-light-mysql-1": {
+      "cpu_avg_pct": 9.3,
+      "cpu_max_pct": 11.3,
+      "mem_avg_mib": 335.9,
+      "mem_max_mib": 336.8,
+      "samples": 3
+    }
+  },
+  "spend_usd": null,
+  "target_summary": {
+    "window_s": 86400,
+    "requests": 4,
+    "outcomes": {
+      "answer": 4
+    },
+    "errors": 0,
+    "p50_ms": 2185.85,
+    "p95_ms": 2322.23,
+    "tool_calls": 16,
+    "tool_failures": 0,
+    "tools": {
+      "get_allergies": {
+        "calls": 4,
+        "failures": 0,
+        "p95_ms": 148.68
+      },
+      "get_labs": {
+        "calls": 4,
+        "failures": 0,
+        "p95_ms": 167.93
+      },
+      "get_medications": {
+        "calls": 4,
+        "failures": 0,
+        "p95_ms": 182.22
+      },
+      "get_problems": {
+        "calls": 4,
+        "failures": 0,
+        "p95_ms": 173.88
+      }
+    },
+    "retries": 0,
+    "claims_kept": 38,
+    "claims_dropped": 0,
+    "verification_pass_rate": 1.0,
+    "prompt_tokens": 200,
+    "completion_tokens": 80,
+    "cost_usd": 0.0,
+    "cost_per_request_usd": 0.0
+  },
+  "target_alerts": [
+    {
+      "name": "high_latency_p95",
+      "firing": false,
+      "value": 2322.23,
+      "threshold": 12000.0,
+      "samples": 4,
+      "runbook": "RUNBOOK.md#high_latency_p95"
+    },
+    {
+      "name": "high_error_rate",
+      "firing": false,
+      "value": 0.0,
+      "threshold": 0.05,
+      "samples": 4,
+      "runbook": "RUNBOOK.md#high_error_rate"
+    },
+    {
+      "name": "high_tool_failure_rate",
+      "firing": false,
+      "value": 0.0,
+      "threshold": 0.1,
+      "samples": 16,
+      "runbook": "RUNBOOK.md#high_tool_failure_rate"
+    }
+  ]
+}

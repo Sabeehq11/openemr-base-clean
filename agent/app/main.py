@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from .api import build_router
-from .chat import build_chat_router
+from .chat import LoadGauge, build_chat_router
 from .conversation import ConversationStore
 from .llm import make_llm
 from .authz import PatientAuthorizer
@@ -57,12 +57,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.runner = ToolRunner(PatientAuthorizer(cfg), FhirClient(cfg), audit=audit)
     app.include_router(build_router(app.state.gateway, app.state.runner))
     app.state.finalizer = Verifier().verify  # the only route from model output to a user
+    app.state.load = LoadGauge(cfg.max_inflight_chats)
     app.include_router(build_chat_router(
         app.state.gateway, app.state.runner, lambda: make_llm(cfg),
         lambda d, e: app.state.finalizer(d, e), ConversationStore(), audit, app.state.traces,
-        cfg.openrouter_model if cfg.llm_provider == "openrouter" else cfg.llm_provider))
+        cfg.openrouter_model if cfg.llm_provider == "openrouter" else cfg.llm_provider,
+        max_inflight=cfg.max_inflight_chats, gauge=app.state.load))
     if isinstance(audit, _TeeAudit):
-        app.include_router(build_dashboard_router(cfg, app.state.traces, audit.chain))
+        app.include_router(build_dashboard_router(cfg, app.state.traces, audit.chain, app.state.load))
 
     @app.middleware("http")
     async def correlation_middleware(request: Request, call_next):

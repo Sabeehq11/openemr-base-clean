@@ -71,17 +71,20 @@ def test_no_alerts_when_healthy(store):
     assert not any(a.firing for a in evaluate_alerts(store))
 
 
-def test_latency_alert_fires_above_12s_p95(store):
+def test_latency_alert_fires_above_25s_p95_and_not_on_healthy_real_model_latency(store):
     for _ in range(10):
-        add(store, ms=15_000)
+        add(store, ms=19_000)  # measured healthy real-model p95
+    assert not {x.name: x for x in evaluate_alerts(store)}["high_latency_p95"].firing
+    for _ in range(10):
+        add(store, ms=28_000)
     a = {x.name: x for x in evaluate_alerts(store)}
     assert a["high_latency_p95"].firing and not a["high_error_rate"].firing
 
 
 def test_latency_alert_ignores_old_samples_and_tiny_samples(store):
     for _ in range(10):
-        add(store, ms=15_000, age=900)  # outside the 5 minute window
-    add(store, ms=20_000)
+        add(store, ms=30_000, age=900)  # outside the 5 minute window
+    add(store, ms=40_000)
     assert not {x.name: x for x in evaluate_alerts(store)}["high_latency_p95"].firing
 
 

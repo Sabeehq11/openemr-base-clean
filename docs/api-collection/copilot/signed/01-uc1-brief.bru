@@ -1,0 +1,47 @@
+meta {
+  name: UC-1 brief (signed)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{agent}}/v1/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "Give me a brief of this patient.",
+    "conversation_id": null
+  }
+}
+
+script:post-response {
+  const m = /event: conversation\ndata: (\{.*\})/.exec(res.getBody());
+  if (m) bru.setVar("conversation_id", JSON.parse(m[1]).id);
+}
+
+tests {
+  const body = String(res.getBody());
+  test("status 200 and an event stream", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getHeader("content-type")).to.contain("text/event-stream");
+  });
+  test("a conversation id is issued", function () {
+    expect(body).to.contain("event: conversation");
+  });
+  test("the answer ends in a verified answer event, with sources", function () {
+    expect(body).to.contain("event: answer");
+    expect(body).to.contain("source_ids");
+    expect(body).to.contain("event: end");
+  });
+  test("the response carries a correlation id", function () {
+    expect(res.getHeader("x-correlation-id")).to.have.lengthOf(36);
+  });
+}
+
+docs {
+  UC-1. Signed like the module signs it. Under the stub model the answer is the chart records, each cited to its source.
+}
