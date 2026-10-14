@@ -31,11 +31,54 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 
 **Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
 
+## Week 1 baseline and Week 2 (multimodal)
+
+This repository has two layers. Everything outside the "Week 2" column below exists today and is the tagged baseline (`w1-baseline`). Anything marked **(planned)** is design only and does not run yet.
+
+| | Week 1 baseline (built, tagged `w1-baseline`) | Week 2 multimodal (**planned**, in progress on branch `week2-agentforge`) |
+|---|---|---|
+| What it does | Answers a physician's questions about the open chart, with cited, verified answers | Adds lab PDF and intake form upload, extraction with source citations, and guideline evidence retrieval |
+| Endpoint | `POST /v1/chat` | `POST /v1/w2/chat` **(planned)** |
+| Switch | Always on | `W2_ENABLED` **(planned)**, off by default. With it off, behavior is identical to Week 1 |
+| Design doc | [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
+| Status | Agent, module, verifier, audit chain, dashboard, evals and load tests built | Checkpoint C0 (baseline and architecture) done. C1 to C5 not started |
+| Measured baseline | [docs/week2/BASELINE.md](docs/week2/BASELINE.md): 522 offline agent tests passed (30 live tests skipped), 60 of 60 stub evals passed | The same results must hold with `W2_ENABLED` at 0 and 1 |
+
+Week 2 planning documents: [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) (architecture and defense), [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md) (roadmap and checkpoints), [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (measured Week 1 baseline).
+
+### Environment variables
+
+Agent settings live in `agent/.env` (copy from `agent/.env.example`; git-ignored, never commit real values). Defaults are those in `agent/app/config.py`.
+
+| Variable | Default | Needed by | Purpose |
+|---|---|---|---|
+| `OPENEMR_BASE_URL` | `https://localhost:9300` | Week 1 | OpenEMR address as seen from the agent |
+| `OPENEMR_VERIFY_TLS` | `true` | Week 1 | Set `false` only for the local self-signed certificate |
+| `LLM_PROVIDER` | `stub` | Week 1 | `stub` (no network, deterministic) or `openrouter` |
+| `OPENROUTER_API_KEY` | empty | Week 1, only with `openrouter` | Model provider key |
+| `OPENROUTER_MODEL` | `anthropic/claude-sonnet-4.5` | Week 1 | Model name |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Week 1 | Provider endpoint |
+| `MODULE_SIGNING_SECRET` | empty | Week 1 | Signs module-to-agent requests (integrity only) |
+| `AUDIT_HMAC_KEY` | empty | Week 1 | Key for the audit hash chain |
+| `DASHBOARD_TOKEN` | empty (dashboard off) | Week 1 | Password for `/dashboard` |
+| `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | empty | Week 1 | OAuth client the module registered for the agent |
+| `DATA_DIR` | `./data` | Week 1 | Agent SQLite files (traces, audit) |
+| `TOOL_TIMEOUT_S` | `5.0` | Week 1 | Timeout per OpenEMR tool call |
+| `MAX_INFLIGHT_CHATS` | `0` (off) | Week 1 | Optional cap on chats in progress |
+| `RATE_LIMIT_PER_MIN` | `60` | Week 1 | Per-user request limit, 0 disables |
+| `COPILOT_FIXTURE_PASSWORD` | none | Week 1 setup scripts | Password for seeded fixture users (12+ characters) |
+| `W2_ENABLED` | off | Week 2 **(planned)** | Turns the Week 2 flow on |
+| `W2_VLM_MODEL` | not yet defined | Week 2 **(planned)** | Vision model for document extraction, through OpenRouter |
+| `COHERE_API_KEY` | not yet defined | Week 2 **(planned)** | Reranker for guideline retrieval; CI uses an offline stub and does not need it |
+| `W2_EMBED_MODEL` | not yet defined | Week 2 **(planned)** | Dense embedding source (open decision, see W2_ARCHITECTURE.md section 11) |
+
+The Week 2 variables are not read by any code yet. Setting them has no effect until the checkpoint that adds them.
+
 ## Architecture overview
 
 A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and a SQLite trace store (served at `/dashboard`; Langfuse is not deployed), each tied to one correlation ID that also goes out on every call to OpenEMR and the model provider. Details, trust boundaries and tradeoffs: [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard, evals and load tests are built (Checkpoints 1 to 3). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
 
-## Run the agent
+## Run the agent (Week 1 baseline)
 
 After OpenEMR is up (below), the agent is a separate container. Short version, full steps in [agent/README.md](agent/README.md):
 
