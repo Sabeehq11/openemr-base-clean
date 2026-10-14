@@ -60,3 +60,11 @@ The per-user rate limit on the demo agent is 60 requests per minute, and each no
   conversation reuse and the answer shape. The real-model behaviour of UC-2 and UC-4 is covered by the live evals
   (`evals/live.py`).
 - The Playwright specs in `tests/playwright/specs/copilot-*.spec.ts` cover the same flow through the browser.
+
+### Week 2 (`w2/`, needs `W2_ENABLED=true`)
+
+`w2/` signs requests the same way as `signed/` and covers the four C1 endpoints: upload a synthetic lab PDF (twice, to see
+`duplicate: true`), read the stored extraction, report written OpenEMR record uuids, and guideline retrieval, plus an
+upload for another physician's patient (403). `w2-upload-unsigned.bru` at the top level must get 401. Set `lab_pdf_b64` to
+`base64 -i agent/tests/fixtures/w2/lab_report.pdf | tr -d '\n'`. For an offline demo run the agent with
+`W2_ENABLED=true W2_USE_STUB_VLM=true`. The real OpenEMR lab rows are written by the module (`upload.php`), not by these requests.

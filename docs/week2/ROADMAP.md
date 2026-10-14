@@ -55,8 +55,8 @@ Dates are from the PRD: MVP Tuesday 11:59 PM, Early Submission Thursday 11:59 PM
 
 | Id | Name | Status |
 |---|---|---|
-| C0 | Baseline and architecture defense | in progress |
-| C1 | MVP: ingest, extract, retrieve | not started |
+| C0 | Baseline and architecture defense | done |
+| C1 | MVP: ingest, extract, retrieve | done (see [checkpoints/C1](checkpoints/C1-mvp-ingest-extract-retrieve.md)) |
 | C2 | Supervisor and two workers | not started |
 | C3 | Eval gate (the PRD hard gate) | not started |
 | C4 | Observability, contracts, ops | not started |
@@ -66,7 +66,7 @@ Dates are from the PRD: MVP Tuesday 11:59 PM, Early Submission Thursday 11:59 PM
 Docs and records only. Tag `w1-baseline`, record a measured baseline, write `W2_ARCHITECTURE.md`, split the README into Week 1 and Week 2 sections. No application code changes. Detail: [checkpoints/C0-baseline.md](checkpoints/C0-baseline.md).
 
 ### C1. MVP: ingest, extract, retrieve
-- Open with a spike on the OpenEMR write path (`user/document.write` versus a module-side PHP write).
+- Opened with a spike on the OpenEMR write path; decision: module-side PHP write (recorded in `W2_ARCHITECTURE.md`).
 - Strict contracts: `Citation`, `LabPdfExtraction`, `IntakeFormExtraction`. Raw VLM output never bypasses validation.
 - Upload through the module, `attach_and_extract(patient_id, file_path, doc_type)`, idempotent on file hash plus patient. Derived facts in a `w2_facts` store with a link to the source document.
 - Guideline corpus, hybrid BM25 plus dense retrieval, Cohere Rerank, offline stubs. Synthetic fixtures.

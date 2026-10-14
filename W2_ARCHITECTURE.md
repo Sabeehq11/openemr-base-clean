@@ -1,6 +1,6 @@
 # W2_ARCHITECTURE.md: Clinical Co-Pilot, Week 2 (Multimodal Evidence Agent)
 
-Status: **v1, design only (checkpoint C0).** Nothing marked **(planned)** exists yet. Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
+Status: **C1 built (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C2 onward and do not exist yet. Items built in C1 are written plainly. Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
 
 Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-baseline` is written plainly. Anything Week 2 will add is marked **(planned)** at first mention in each section and listed in the table below. Planned items are never runnable until a later checkpoint says so.
 
@@ -14,8 +14,8 @@ Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-basel
 | `POST /v1/w2/documents`, `GET /v1/w2/documents/{id}`, `POST /v1/w2/chat` | agent endpoints | C1 and C2 |
 | `attach_and_extract(patient_id, file_path, doc_type)` | server-side function, not a chat tool | C1 |
 | `w2.db` (in `data_dir`) holding `w2_documents`, `w2_facts`, `w2_citations` | agent-side SQLite file and tables | C1 |
-| `agent/app/w2/rag/`, guideline corpus under `docs/week2/corpus/` | retrieval code and data | C1 |
-| `COHERE_API_KEY`, `W2_VLM_MODEL`, `W2_EMBED_MODEL` | env vars | C1 |
+| `agent/app/w2/rag/`, guideline corpus under `agent/corpus/` | retrieval code and data | C1 |
+| `W2_RERANK_MODEL`, `W2_VLM_MODEL`, `W2_EMBED_MODEL` | env vars | C1 |
 | `Supervisor`, `Handoff`, `WorkerResult` | graph types | C2 |
 | `evals/w2/`, `evals/baseline.json`, `evals/gate.py` | eval suite and gate | C3 |
 | `.github/workflows/agent-evals.yml`, local pre-push hook | CI gate | C3 |
@@ -32,13 +32,13 @@ Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-basel
 | Evidence | None outside the chart | Guideline passages from a small corpus, retrieved and reranked |
 | Orchestration | One explicit loop, `AgentLoop` in `agent/app/loop.py` | A supervisor and two workers, wrapping `AgentLoop` |
 | Verification | `Verifier` in `agent/app/verifier.py` is the only path to the UI | Same verifier, extended to accept extracted-fact and guideline citations |
-| Writes | None. A Week 1 invariant eval asserts there is no write tool | One server-side `attach_and_extract` path **(planned)**, never callable by the model |
+| Writes | None. A Week 1 invariant eval asserts there is no write tool | One server-side `attach_and_extract` path, never callable by the model. The module (not the agent) writes lab rows into OpenEMR in the user's session |
 | Endpoint | `POST /v1/chat` | `POST /v1/w2/chat` **(planned)**. `/v1/chat` is untouched |
 
 Isolation rules:
-1. New code lives only under `agent/app/w2/` **(planned)** and `agent/contracts/w2/` **(planned)**.
+1. New code lives only under `agent/app/w2/` and `agent/contracts/w2/`.
 2. Week 1 files change only at named seams: tracing (`agent/app/tracing.py`), metrics (`agent/app/metrics.py`), readiness in `agent/app/main.py`, the verifier's citation types, and the eval registry (`evals/registry.py`). Each change is additive and gets a migration note in section 6.
-3. `W2_ENABLED` **(planned)** defaults to off. With it off, the agent behaves exactly as at `w1-baseline`.
+3. `W2_ENABLED` defaults to off. With it off, the agent behaves exactly as at `w1-baseline`.
 4. The supervisor calls `AgentLoop` as the chart-facts capability and does not edit it.
 5. Week 1 tests (522 passed, 30 skipped offline) and stub evals (60/60) must pass with `W2_ENABLED` both 0 and 1.
 
@@ -76,12 +76,12 @@ Steps and rules:
 1. The browser never supplies a patient id. The module resolves it from the session, as in Week 1 (`PatientUuidResolver.php`).
 2. The agent runs the same fail-closed authorization as Week 1 (`agent/app/authz.py`) before reading or writing anything.
 3. The upload is checked for type (PDF, PNG, JPEG), size and page limits before any model call.
-4. The source file is stored in OpenEMR through its document API. The document in OpenEMR is the source of truth for the file.
+4. The source file is stored in OpenEMR by the module, in the user's session, through `Document::createDocument` (decision 1 in section 11). The document in OpenEMR is the source of truth for the file. The agent receives the bytes and re-hashes them itself.
 5. Idempotency key: SHA-256 of the file bytes plus patient UUID. A repeat upload returns the existing record and creates no duplicate.
-6. The VLM sees page images only. Text inside a document is data, labelled untrusted, as chart free text is in Week 1.
+6. The VLM sees page images. Text inside a document is data, labelled untrusted, as chart free text is in Week 1. PDFs are rendered through a fallback chain (below).
 7. Raw VLM output never leaves the extractor. It is parsed into the schema below, and a failed parse is a failed extraction, not a partial record.
 
-### Contracts (Pydantic, all `extra="forbid"`, all **(planned)** under `agent/contracts/w2/`)
+### Contracts (Pydantic, all `extra="forbid"`, all under `agent/contracts/w2/`)
 
 `Citation`, the machine-readable shape the PRD requires:
 
@@ -102,6 +102,10 @@ Rules for both:
 - A field the model cannot tie to a quote and region is `unsupported`. It stays visible and flagged. It is never dropped silently and never used as the basis for an answer.
 - A lab flag is recomputed from value and range by the rules layer, as in Week 1 (`agent/app/rules.py`). The model's flag is stored but not trusted.
 - Numbers and dates in a claim must appear in the cited quote after normalization, using the same exact-match logic as the Week 1 verifier.
+
+**PDF rendering fallback chain (C1).** `render.py` tries `PyMuPDFRenderer`, then `PdfiumRenderer` (`pypdfium2`), then `PopplerRenderer` (`pdftoppm`, subprocess with timeout), then `NativePdfVlmInput` (the PDF itself sent to the model; bbox is model-reported only, so confidence is capped at 0.5 and rows are `unsupported` unless the quote is found in the PDF text). A renderer that raises, times out or returns no pages is skipped; the log carries the renderer name and error class only. If all fail, the document stays in OpenEMR and `w2_documents.status` is `extraction_failed` with `error_code=render_failed`. PyMuPDF is AGPL, which is one reason the chain keeps it swappable. `/v1/w2/documents` reports the renderers available and the agent logs them at startup.
+
+**Module flow (C1).** `public/upload.php` and `src/UploadProxy.php` take user, pid, CSRF and ACL from the session (`patients/docs` write and `patients/lab`), check size and type by content, store or reuse the OpenEMR document (dedupe on `documents.hash`, SHA3-512, per patient), call `POST /v1/w2/documents`, write supported lab rows through `LabRecordWriter`, report the written record uuids to `POST /v1/w2/documents/{id}/links`, and ask `POST /v1/w2/retrieve` for guidelines using test names only.
 
 `Handoff` and `WorkerResult` are defined in section 3.
 
@@ -145,18 +149,18 @@ Answer rules: the answer model receives patient-record facts (chart and extracte
 
 ## 4. RAG design
 
-Corpus **(planned)**: about 15 to 25 short passages from freely redistributable sources, stored as markdown with front matter (`doc_id`, `title`, `publisher`, `year`, `section`, `url`). Topics follow the Week 1 users and the seeded charts: diabetes and A1c, chronic kidney disease, hypertension, lipids, anticoagulation monitoring (INR). Each passage is checked for licence before inclusion. No patient data is ever placed in the corpus.
+Corpus (built in C1, 20 passages in 5 documents): about 15 to 25 short passages from freely redistributable sources, stored as markdown with front matter (`doc_id`, `title`, `publisher`, `year`, `section`, `url`). Topics follow the Week 1 users and the seeded charts: diabetes and A1c, chronic kidney disease, hypertension, lipids, anticoagulation monitoring (INR). Each passage is checked for licence before inclusion. No patient data is ever placed in the corpus.
 
 Pipeline:
 1. **Chunking:** split by section, then by about 200 to 300 tokens with small overlap. A chunk keeps `doc_id`, `section` and an id of the form `doc_id#n`.
 2. **Sparse:** BM25 over chunk text.
 3. **Dense:** embeddings of each chunk, stored with the index. The embedding source is an open decision (section 11).
 4. **Fusion:** reciprocal rank fusion of the top candidates from both, then a cap of about 20 candidates.
-5. **Rerank:** Cohere Rerank on the candidates; keep the top 3 to 5 with scores.
+5. **Rerank:** Cohere Rerank v3.5 through OpenRouter `/api/v1/rerank` (the existing `OPENROUTER_API_KEY`) on the candidates; keep the top 3 to 5 with scores.
 6. **Output:** snippets with `Citation` metadata (`source_type=guideline`). Only these reach the answer model.
 7. **Empty result:** if no candidate passes a minimum rerank score, the retriever returns `empty`. The answer then says no guideline evidence was found and does not fill the gap from model memory.
 
-Offline mode for CI **(planned)**: a deterministic embedder (hashed bag-of-words vectors) and a deterministic reranker (lexical overlap score) behind the same interfaces as the real ones. CI never needs `COHERE_API_KEY` or network access.
+Offline mode for CI (built in C1): a deterministic embedder (hashed bag-of-words vectors) and a deterministic reranker (lexical overlap score) behind the same interfaces as the real ones. CI never needs an API key or network access.
 
 Query construction: the query is built from the question plus de-identified lab and test names. It never contains patient names, dates of birth or other identifiers.
 
@@ -198,16 +202,17 @@ Principle: OpenEMR stays authoritative for the patient record. The agent stores 
 | Artifact | Owner and store | Lineage | Access control | Validation |
 |---|---|---|---|---|
 | Source document (PDF or image) | OpenEMR documents (authoritative) | Uploaded by a named user for one patient | OpenEMR ACL plus the agent's fail-closed patient authorization (`agent/app/authz.py`) | Type, size and page limits; SHA-256 stored |
-| Document registry `w2_documents` **(planned)** | Agent SQLite in `data_dir` (`agent/data/`, git-ignored) | `document_id` in OpenEMR, patient UUID, file hash, doc type, status | Rows read only for an authorized patient | Unique on (patient UUID, file hash) |
-| Extracted facts `w2_facts` **(planned)** | Agent SQLite (derived) | `document_id`, extractor version, model name, extraction time | Same as above | Strict schema; `unsupported` kept and flagged |
-| Citations `w2_citations` **(planned)** | Agent SQLite (derived) | Fact id, page, quote, bbox | Same as above | `bbox` required for `extracted`; quote must contain the value |
-| Guideline chunks and index **(planned)** | Repo (`docs/week2/corpus/`), index built at start | Source publisher, year, licence | Public data | Front matter required; chunk ids stable |
+| Document registry `w2_documents` | Agent SQLite in `data_dir` (`agent/data/`, git-ignored) | `document_id` in OpenEMR, patient UUID, file hash, doc type, status | Rows read only for an authorized patient | Unique on (patient UUID, file hash) |
+| Extracted facts `w2_facts` | Agent SQLite (derived) | `document_id`, extractor version, model name, extraction time | Same as above | Strict schema; `unsupported` kept and flagged |
+| Citations `w2_citations` | Agent SQLite (derived) | Fact id, page, quote, bbox | Same as above | `bbox` required for `extracted`; quote must contain the value |
+| Guideline chunks and index | Repo (`agent/corpus/`), index built at start | Source publisher, year, licence | Public data | Front matter required; chunk ids stable |
 | Golden set **(planned)** | Repo (`evals/w2/`) | Versioned in git | Synthetic only | Rubrics defined per case |
 | Traces and audit | Agent SQLite `traces.db`, `audit.db` (Week 1) | Correlation ID | Operators only | HMAC chain on audit (Week 1) |
 
 Authority rules:
 - **Conflict between a chart value and an extracted value:** both are shown, labelled by source. Nothing is merged or overwritten, as the Week 1 conflict evals require.
-- **Extracted facts do not become chart data automatically.** Writing a value into the chart (for example an Observation) is out of scope. FHIR in this OpenEMR version cannot write Observation (see section 11).
+- **Lab rows are written to the chart by the module, not the agent (C1).** Only `supported`, numeric rows become native OpenEMR lab records: `procedure_order` (history-only, complete) -> `procedure_report` (`review_status='received'`, so unreviewed) -> `procedure_result`, with `procedure_result.document_id` set to the source `documents.id`. Writes are insert-only, in one transaction, and a row already linked to the same document (same `result_text`) is reused, never duplicated or updated. OpenEMR's FHIR laboratory Observation service reads these tables, so Week 1's `get_labs` sees them with no Week 1 code change. After a write, OpenEMR owns the lab record; `w2.db` keeps provenance only (quote, bbox, confidence, model, extractor version, record uuid). The agent has no write path: neither the chat model nor the agent's OAuth client gained a scope.
+- **Intake form values are not written to the chart in C1 (deliberate deferral).** Demographics never overwrite `patient_data` (a mismatch is shown side by side). Chief concern, medications, allergies and family history stay in `w2.db` for review. Writing them into `lists` and history would change the medication and allergy lists the Week 1 rules rely on, so it needs a later, confirm-gated step. The source document is filed under "Patient Information".
 - **Rebuild:** `w2_facts` can be rebuilt by re-running extraction on the stored source documents. Losing the agent database loses derived rows only, not documents or chart data.
 - **Delete:** if a document is removed in OpenEMR, its derived rows are marked stale on the next read and excluded from answers.
 
@@ -215,7 +220,8 @@ Migration notes (every change to a Week 1 schema or file):
 
 | Change | Type | Rollback |
 |---|---|---|
-| New tables `w2_*` in a new file `data_dir/w2.db` **(planned)** | Additive, separate file, so `traces.db` and `audit.db` are untouched | Delete the file |
+| Insert-only rows in existing OpenEMR `procedure_order`, `procedure_order_code`, `procedure_report`, `procedure_result` (no schema change) | Written by the module for supported lab rows; rows link to the source document by `document_id` | Delete the rows by `procedure_result.document_id`; Week 1 reads are unaffected |
+| New tables `w2_*` in a new file `data_dir/w2.db` | Additive, separate file, so `traces.db` and `audit.db` are untouched | Delete the file |
 | `spans` gets `span_id` and `parent_span_id` columns (C4) | Additive `ALTER TABLE`, nullable, old rows stay valid | Ignore the columns; Week 1 code does not read them |
 | Verifier accepts citation `source_type` of `extracted` and `guideline` | Additive enum values; `chart` behavior unchanged | Revert the code; `W2_ENABLED` off hides the path |
 | `/ready` response gains a `degraded` state (C4) | The 200 and 503 behavior for Week 1 checks is kept | Revert the code |
@@ -249,10 +255,10 @@ Authorization:
 
 | Layer | What is tested | Failure mode it guards | Run in |
 |---|---|---|---|
-| Unit: contracts **(planned)** | `Citation`, `LabPdfExtraction`, `IntakeFormExtraction` accept good data and reject extra fields, bad enums, missing quote or bbox | Schema drift; a model output that slips through | PR gate |
-| Unit: extractor parsing **(planned)** | Fixture VLM outputs (valid, truncated, wrong types, injected text) | Partial records saved; instructions followed | PR gate |
+| Unit: contracts | `Citation`, `LabPdfExtraction`, `IntakeFormExtraction` accept good data and reject extra fields, bad enums, missing quote or bbox | Schema drift; a model output that slips through | PR gate |
+| Unit: extractor parsing | Fixture VLM outputs (valid, truncated, wrong types, injected text) | Partial records saved; instructions followed | PR gate |
 | Unit: rules and verifier additions | Flag recompute, quote contains value, new citation types, Week 1 behavior unchanged | A wrong flag or an unverified claim reaching the UI | PR gate |
-| Unit: retrieval **(planned)** | BM25, fusion order, rerank cutoff, empty result, offline stubs | Missing or wrong evidence; stale index | PR gate |
+| Unit: retrieval | BM25, fusion order, rerank cutoff, empty result, offline stubs | Missing or wrong evidence; stale index | PR gate |
 | Unit: supervisor **(planned)** | Routing table, step and deadline caps, worker failure paths | Wrong route; loops; hangs | PR gate |
 | Contract: supervisor to worker **(planned)** | `Handoff` and `WorkerResult` shapes, one event per handoff | Silent handoff changes; untraceable routes | PR gate |
 | Integration (stub tier) | Upload to extract to store to answer, with a fake VLM and fake OpenEMR | A broken seam between components | PR gate |
@@ -292,7 +298,7 @@ What needs protecting and how it is recovered:
 | Data | Where | Authoritative? | Backup | If lost |
 |---|---|---|---|---|
 | Patient record and source documents | OpenEMR MariaDB and `sites/default/documents` | Yes | OpenEMR host backup of the database and the documents volume | Restore from backup; this is the only irreplaceable data |
-| `w2.db` (documents registry, facts, citations) **(planned)** | `agent/data/` volume | No, derived | Nightly file copy using SQLite `.backup`, kept 7 days | Rebuild by re-extracting stored documents |
+| `w2.db` (documents registry, facts, citations) | `agent/data/` volume | No, derived | Nightly file copy using SQLite `.backup`, kept 7 days | Rebuild by re-extracting stored documents |
 | `traces.db` | `agent/data/` | No | Same nightly copy | Observability history lost; no patient impact |
 | `audit.db` (HMAC chain) | `agent/data/` | Yes, for audit | Nightly copy plus copy of the audit key stored separately | Chain cannot be proven past the loss; restore latest copy |
 | Guideline corpus, golden set, code | Git | Yes | The Git remote | Re-clone |
@@ -314,11 +320,11 @@ Known gap (Week 1 debt, carried): OpenEMR has no retention or purge settings (au
 
 | # | Decision | Options | Recommended direction | Resolve by |
 |---|---|---|---|---|
-| 1 | **How the source document is written into OpenEMR.** The agent's OAuth client is read-only today. The OpenEMR REST API has a document upload endpoint that takes the integer patient id (`pid`) rather than the UUID | (a) register `user/document.write` for the agent client and call the REST endpoint; (b) have the PHP module in `interface/modules/custom_modules/oe-module-copilot` write the file inside the user's session and tell the agent the document id | Try (a) in a short spike. Choose (b) if the scope cannot be granted or the pid mapping is awkward, because the module already holds the session and the patient mapping | Start of C1, 1 to 2 hours |
+| 1 | **How the source document is written into OpenEMR.** | (a) `user/document.write` for the agent client; (b) module-side PHP in the user's session | **Settled in C1: (b).** Granting the chat token a write scope would break the read-only invariant; the module already holds session, CSRF and pid mapping. Spike on the live stack: `Document::createDocument` stores the file, sets `documents.hash` (SHA3-512, used for dedupe) and the file appears in the chart. Option (a) is the fallback | Settled |
 | 2 | **Dense embedding source** | (a) a hosted embedding API through the existing provider; (b) a small local model; (c) the deterministic hashed embedder only | (a) for the live tier, (c) for CI. Avoids heavy local dependencies and keeps CI offline. Corpus text is public, so sending it out carries no PHI risk | C1, with the retrieval work |
 | 3 | **Where extracted values are shown relative to chart values** | Side by side, labelled; never merged | Side by side (section 6) | Settled |
-| 4 | **PDF page rendering for the VLM and the overlay** | Render server-side to PNG with a PDF library, or accept images only for the MVP | Render server-side; images-only is the fallback if the library causes build trouble | C1 |
-| 5 | **Whether extracted facts are ever written back to the chart** | No; FHIR in this OpenEMR cannot write Observation, and a human should confirm any chart change | Not in scope for Week 2 | Settled |
+| 4 | **PDF page rendering for the VLM and the overlay** | Render server-side, or images only | **Settled in C1:** server-side with the four-step fallback chain (section 2). Whether the chosen OpenRouter model accepts a PDF as a native file input is **not yet confirmed live**; step 4 of the chain is built and unit-tested against a stub, and is only reached if every local renderer fails. If a live check shows the model rejects PDFs, drop step 4 | Live check before C2 |
+| 5 | **Whether extracted facts are written back to the chart** | No; or lab rows only; or everything | **Revised in C1:** lab rows (supported, numeric) are written by the module as unreviewed native lab records linked to the source document (section 6). The spike inserted a history-only order, report and result for a test patient: they showed up in OpenEMR's `ProcedureService` and in FHIR `Observation?category=laboratory` with no Week 1 code change, and the rows were then removed. Intake values (medications, allergies, history) are **deferred**, confirm-gated, because they change the lists Week 1 rules rely on | C2 or later for intake |
 | 6 | **GitLab versus GitHub for CI** | The PRD names GitLab CI; this repo's remote is GitHub | GitHub Actions, stated in the README | Settled |
 | 7 | **Judge model for wording rubrics, if any** | Deterministic only, or a fixed model judge at temperature 0 | Deterministic wherever possible; judge only for wording, never in the PR gate | C3 |
 

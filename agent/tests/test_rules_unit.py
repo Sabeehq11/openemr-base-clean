@@ -42,6 +42,23 @@ def test_stored_normal_flag_on_high_value_is_reported():
     assert "high" in f[0].text and "chart flag is: N" in f[0].text
 
 
+def test_lab_flag_finding_states_the_collection_date():
+    f = rules.lab_flag_findings([lab(9.1, flag="N", collected=date(2024, 11, 11))])
+    assert "(collected 2024-11-11)" in f[0].text
+
+
+def test_lab_flag_finding_says_when_the_date_is_unknown():
+    f = rules.lab_flag_findings([lab(9.1, flag="N", collected=None)])
+    assert "(collection date not recorded)" in f[0].text and "None" not in f[0].text
+
+
+def test_old_and_current_findings_for_one_test_are_told_apart():
+    old = lab(9.1, flag="N", collected=date(2024, 11, 11), sid="Observation/old")
+    new = lab(9.4, flag="N", collected=date(2026, 9, 12), sid="Observation/new")
+    texts = {f.source_ids[0]: f.text for f in rules.lab_flag_findings([new, old])}
+    assert "collected 2024-11-11" in texts["Observation/old"] and "collected 2026-09-12" in texts["Observation/new"]
+
+
 def test_matching_stored_flag_produces_no_finding():
     assert rules.lab_flag_findings([lab(9.1, flag="H")]) == []
 

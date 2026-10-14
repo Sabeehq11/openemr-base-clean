@@ -1,0 +1,29 @@
+meta {
+  name: Upload the synthetic lab PDF (signed)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{agent}}/v1/w2/documents
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "document_id": 9001,
+    "doc_type": "lab_pdf",
+    "content_b64": "{{lab_pdf_b64}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.document.status: eq extracted
+}
+
+docs {
+  Send it twice: the second response has duplicate: true and no second record. The module, not this request, writes the OpenEMR lab rows.
+}

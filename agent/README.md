@@ -49,7 +49,7 @@ Needs Docker. The host needs only Python 3.10+ if you want to run the tests outs
 |---|---|---|
 | Agent unit (no network) | `cd agent && .venv/bin/python -m pytest` | Contracts, tools, loop, verifier, rules, audit chain, tracing, metrics, dashboard, CLI |
 | Agent live (needs the stack) | `cd agent && OE_LIVE=1 .venv/bin/python -m pytest` | Real OAuth flow, token expiry and revocation, cross-physician denial, FHIR coverage |
-| Evals, stub tier | `PYTHONPATH=agent agent/.venv/bin/python -m evals.run` | 56 cases tagged by failure mode, results in `evals/results/` |
+| Evals, stub tier | `PYTHONPATH=agent agent/.venv/bin/python -m evals.run` | 61 cases tagged by failure mode, results in `evals/results/` |
 | Evals, live Sonnet | `EVAL_MAX_USD=1.00 PYTHONPATH=agent agent/.venv/bin/python -m evals.run --tier live` | Same invariants on real model output, spend capped, opt-in |
 | Module (PHPUnit isolated) | `docker exec development-easy-light-openemr-1 sh -c 'cd /var/www/localhost/htdocs/openemr && vendor/bin/phpunit -c phpunit-isolated.xml --filter Copilot'` | Request signing parity, pid to UUID resolution |
 | Browser | `./scripts/copilot/e2e_copilot.sh` | Playwright, 24 tests (OpenEMR smoke plus Co-Pilot dock, citations, declines, denials, LLM-down), normal and LLM-down modes |

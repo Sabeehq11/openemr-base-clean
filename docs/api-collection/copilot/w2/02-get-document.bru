@@ -1,0 +1,20 @@
+meta {
+  name: Read a stored extraction (signed)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{agent}}/v1/w2/documents/9001?patient_uuid={{patient_uuid}}
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.document.document_id: eq 9001
+}
+
+docs {
+  The patient in the query grants nothing: access is decided by the token and care-team check.
+}

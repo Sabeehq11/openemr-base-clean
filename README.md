@@ -33,15 +33,15 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 
 ## Week 1 baseline and Week 2 (multimodal)
 
-This repository has two layers. Everything outside the "Week 2" column below exists today and is the tagged baseline (`w1-baseline`). Anything marked **(planned)** is design only and does not run yet.
+This repository has two layers. Everything outside the "Week 2" column below exists today and is the tagged baseline (`w1-baseline`). Anything marked **(planned)** is design only and does not run yet. Week 2 items without that mark are built (checkpoint C1) and only run with `W2_ENABLED=true`.
 
-| | Week 1 baseline (built, tagged `w1-baseline`) | Week 2 multimodal (**planned**, in progress on branch `week2-agentforge`) |
+| | Week 1 baseline (built, tagged `w1-baseline`) | Week 2 multimodal (in progress on branch `week2-agentforge`) |
 |---|---|---|
 | What it does | Answers a physician's questions about the open chart, with cited, verified answers | Adds lab PDF and intake form upload, extraction with source citations, and guideline evidence retrieval |
 | Endpoint | `POST /v1/chat` | `POST /v1/w2/chat` **(planned)** |
-| Switch | Always on | `W2_ENABLED` **(planned)**, off by default. With it off, behavior is identical to Week 1 |
+| Switch | Always on | `W2_ENABLED`, off by default. With it off, behavior is identical to Week 1 |
 | Design doc | [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
-| Status | Agent, module, verifier, audit chain, dashboard, evals and load tests built | Checkpoint C0 (baseline and architecture) done. C1 to C5 not started |
+| Status | Agent, module, verifier, audit chain, dashboard, evals and load tests built | C0 (baseline and architecture) and C1 (upload, extract, retrieve) done. C2 to C5 not started. `POST /v1/w2/chat` arrives in C2; C1 has `/v1/w2/documents`, `/v1/w2/documents/{id}`, `/v1/w2/documents/{id}/links` and `/v1/w2/retrieve` |
 | Measured baseline | [docs/week2/BASELINE.md](docs/week2/BASELINE.md): 522 offline agent tests passed (30 live tests skipped), 60 of 60 stub evals passed | The same results must hold with `W2_ENABLED` at 0 and 1 |
 
 Week 2 planning documents: [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) (architecture and defense), [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md) (roadmap and checkpoints), [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (measured Week 1 baseline).
@@ -67,12 +67,14 @@ Agent settings live in `agent/.env` (copy from `agent/.env.example`; git-ignored
 | `MAX_INFLIGHT_CHATS` | `0` (off) | Week 1 | Optional cap on chats in progress |
 | `RATE_LIMIT_PER_MIN` | `60` | Week 1 | Per-user request limit, 0 disables |
 | `COPILOT_FIXTURE_PASSWORD` | none | Week 1 setup scripts | Password for seeded fixture users (12+ characters) |
-| `W2_ENABLED` | off | Week 2 **(planned)** | Turns the Week 2 flow on |
-| `W2_VLM_MODEL` | not yet defined | Week 2 **(planned)** | Vision model for document extraction, through OpenRouter |
-| `COHERE_API_KEY` | not yet defined | Week 2 **(planned)** | Reranker for guideline retrieval; CI uses an offline stub and does not need it |
-| `W2_EMBED_MODEL` | not yet defined | Week 2 **(planned)** | Dense embedding source (open decision, see W2_ARCHITECTURE.md section 11) |
+| `W2_ENABLED` | off | Week 2 | Turns the Week 2 flow on (routes are 404 without it) |
+| `W2_VLM_MODEL` | `anthropic/claude-sonnet-4.5` | Week 2 | Vision model for document extraction, through OpenRouter |
+| `W2_RERANK_MODEL` | `cohere/rerank-v3.5` | Week 2 | Reranker for guideline retrieval, called through OpenRouter `/rerank` with `OPENROUTER_API_KEY`; with no key the offline lexical reranker is used |
+| `W2_EMBED_MODEL` | `openai/text-embedding-3-small` | Week 2 | Hosted dense embeddings (cached); CI uses a hashed embedder |
+| `W2_USE_STUB_VLM` | `false` | Week 2 | Canned extraction, no network. Offline demos and CI only |
+| `W2_MAX_UPLOAD_BYTES`, `W2_MAX_PAGES` | 8 MiB, 5 | Week 2 | Upload caps, enforced before any model call |
 
-The Week 2 variables are not read by any code yet. Setting them has no effect until the checkpoint that adds them.
+The Week 2 variables are read only when `W2_ENABLED=true`; with it off the agent behaves exactly as at `w1-baseline`. C1 demo: `scripts/copilot/demo_c1.sh` (offline, stub model) and [docs/week2/checkpoints/C1-mvp-ingest-extract-retrieve.md](docs/week2/checkpoints/C1-mvp-ingest-extract-retrieve.md).
 
 ## Architecture overview
 

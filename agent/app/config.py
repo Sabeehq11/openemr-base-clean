@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     tool_timeout_s: float = 5.0
     max_inflight_chats: int = 0  # opt-in cap on chats in progress; over it, 503 + Retry-After (docs/week1/PERFORMANCE.md: not a net win, so off)
     rate_limit_per_min: int = 60  # per verified user across chat and tool calls; 0 disables
+    # Week 2 (additive; everything below is inert unless w2_enabled)
+    w2_enabled: bool = False
+    w2_rerank_model: str = "cohere/rerank-v3.5"  # served through OpenRouter /rerank with openrouter_api_key
+    w2_vlm_model: str = "anthropic/claude-sonnet-4.5"
+    w2_embed_model: str = "openai/text-embedding-3-small"
+    w2_use_stub_vlm: bool = False  # CI and offline demos: canned extraction, no network
+    w2_max_upload_bytes: int = 8 * 1024 * 1024
+    w2_max_pages: int = 5
 
 
 @lru_cache

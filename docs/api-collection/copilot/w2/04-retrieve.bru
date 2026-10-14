@@ -1,0 +1,28 @@
+meta {
+  name: Guideline retrieval (signed)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{agent}}/v1/w2/retrieve
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "What is the HbA1c goal for an adult with diabetes?",
+    "test_names": ["Hemoglobin A1c"]
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: eq ok
+}
+
+docs {
+  Question and test names only; no patient values are sent.
+}

@@ -1,0 +1,25 @@
+meta {
+  name: Upload for another physician's patient is 403 (signed)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{agent}}/v1/w2/documents
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{other_patient_uuid}}",
+    "document_id": 9002,
+    "doc_type": "lab_pdf",
+    "content_b64": "{{lab_pdf_b64}}"
+  }
+}
+
+assert {
+  res.status: eq 403
+  res.body.error: eq forbidden
+}
