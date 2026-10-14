@@ -2,7 +2,7 @@
 
 /**
  * Prints an OpenEMR SMART EHR launch token bound to one patient UUID (probe/test helper, synthetic data only).
- * Usage (inside the container, as apache): php scripts/authz_launch_token.php <patient-uuid>
+ * Usage (inside the container, as apache): php scripts/copilot/authz_launch_token.php <patient-uuid>
  */
 
 declare(strict_types=1);
@@ -13,7 +13,7 @@ if (PHP_SAPI !== 'cli' || $argc < 2) {
 
 $_GET['site'] = 'default';
 $ignoreAuth = true;
-require_once __DIR__ . '/../interface/globals.php';
+require_once __DIR__ . '/../../interface/globals.php';
 
 use OpenEMR\FHIR\SMART\SMARTLaunchToken;
 

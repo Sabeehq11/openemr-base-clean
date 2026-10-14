@@ -1,6 +1,6 @@
 # Hardening overlay for exposing the local dev stack through a tunnel. Synthetic data only.
-# Used by scripts/tunnel.sh:  docker compose -f docker/development-easy-light/docker-compose.yml -f deploy/tunnel/docker-compose.override.yml ...
-# The upstream compose file is not edited. Remove this overlay (scripts/tunnel.sh down) to return to the stock dev setup.
+# Used by scripts/copilot/tunnel.sh:  docker compose -f docker/development-easy-light/docker-compose.yml -f deploy/tunnel/docker-compose.override.yml ...
+# The upstream compose file is not edited. Remove this overlay (scripts/copilot/tunnel.sh down) to return to the stock dev setup.
 services:
   mysql:
     environment:

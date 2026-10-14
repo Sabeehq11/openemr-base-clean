@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Expose the local OpenEMR (and only OpenEMR) through a Cloudflare quick tunnel. Synthetic data only.
 #
-#   scripts/tunnel.sh harden   rotate admin and DB root passwords into deploy/tunnel/.env (git-ignored),
+#   scripts/copilot/tunnel.sh harden   rotate admin and DB root passwords into deploy/tunnel/.env (git-ignored),
 #                              apply the hardening overlay, restart the stack
-#   scripts/tunnel.sh up       run the security gate; only if it passes, start the tunnel and print the URL
-#   scripts/tunnel.sh down     stop the tunnel (the stack keeps running, now hardened)
-#   scripts/tunnel.sh unharden remove the overlay and go back to the stock dev stack (default credentials NOT restored)
+#   scripts/copilot/tunnel.sh up       run the security gate; only if it passes, start the tunnel and print the URL
+#   scripts/copilot/tunnel.sh down     stop the tunnel (the stack keeps running, now hardened)
+#   scripts/copilot/tunnel.sh unharden remove the overlay and go back to the stock dev stack (default credentials NOT restored)
 #
 # Secrets are written to deploy/tunnel/.env and never printed.
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 ENV_FILE="deploy/tunnel/.env"
 COMPOSE=(docker compose -f docker/development-easy-light/docker-compose.yml -f deploy/tunnel/docker-compose.override.yml)
@@ -21,7 +21,7 @@ LOG_FILE="deploy/tunnel/cloudflared.log"
 
 rand() { openssl rand -base64 33 | tr -d '/+=\n' | cut -c1-24; }
 load_env() { set -a; [ -f "$ENV_FILE" ] && . "./$ENV_FILE"; set +a; }
-need_env() { [ -f "$ENV_FILE" ] || { echo "Run scripts/tunnel.sh harden first." >&2; exit 2; }; load_env; }
+need_env() { [ -f "$ENV_FILE" ] || { echo "Run scripts/copilot/tunnel.sh harden first." >&2; exit 2; }; load_env; }
 
 cmd_harden() {
     local old_root="${DB_ROOT_PASS:-root}"
@@ -49,13 +49,13 @@ cmd_harden() {
         $h=(new OpenEMR\Common\Auth\AuthHash("auth"))->passwordHash(getenv("NEWPASS"));
         sqlStatement("UPDATE users_secure SET password=?, last_update_password=NOW(), login_fail_counter=0 WHERE username=?", [$h,"admin"]);
         echo "admin password rotated\n";'
-    echo "Hardened. Credentials are in $ENV_FILE (not printed). Run: scripts/tunnel.sh up"
+    echo "Hardened. Credentials are in $ENV_FILE (not printed). Run: scripts/copilot/tunnel.sh up"
 }
 
 cmd_up() {
     need_env
     command -v cloudflared >/dev/null || { echo "cloudflared is not installed (brew install cloudflared)." >&2; exit 2; }
-    DB_ROOT_PASS="$DB_ROOT_PASS" ./scripts/security_gate.sh || { echo "Security gate failed. Not starting the tunnel." >&2; exit 1; }
+    DB_ROOT_PASS="$DB_ROOT_PASS" ./scripts/copilot/security_gate.sh || { echo "Security gate failed. Not starting the tunnel." >&2; exit 1; }
     [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null && { echo "Tunnel already running: $(cat "$URL_FILE")"; return; }
     : > "$LOG_FILE"
     # --no-autoupdate keeps the process predictable. The origin is OpenEMR over HTTPS with its self-signed cert.

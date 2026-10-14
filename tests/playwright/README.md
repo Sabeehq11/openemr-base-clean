@@ -8,7 +8,7 @@ BASE_URL=https://your-deployed-url npm test   # smoke-check the deployment
 ```
 
 Env: `OE_USER`/`OE_PASS` (default admin/pass). Patient specs expect the data from
-`scripts/seed_demo_patients.py` (run by `scripts/setup-local.sh`).
+`scripts/copilot/seed_demo_patients.py` (run by `scripts/copilot/setup-local.sh`).
 
 Planned next (Early submission): chat tab opens, answers carry citations, unauthorized
 patient is refused.

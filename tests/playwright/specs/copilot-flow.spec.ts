@@ -1,7 +1,7 @@
 import { test, expect, Page } from '../fixtures';
 import { login } from '../fixtures';
 
-// Fixture split (scripts/authz_fixture.php): physician A is on the care team of even pids, physician B of odd pids.
+// Fixture split (scripts/copilot/authz_fixture.php): physician A is on the care team of even pids, physician B of odd pids.
 // Needs the agent running with LLM_PROVIDER=stub.
 const PASS = process.env.COPILOT_FIXTURE_PASSWORD ?? '';
 
@@ -166,7 +166,7 @@ test.describe('Co-Pilot follow-up and patient switch', () => {
 });
 
 test.describe('Co-Pilot degraded mode (agent started with LLM_PROVIDER=unavailable)', () => {
-  test.skip(!PASS || process.env.COPILOT_E2E_MODE !== 'degraded', 'run via scripts/e2e_copilot.sh');
+  test.skip(!PASS || process.env.COPILOT_E2E_MODE !== 'degraded', 'run via scripts/copilot/e2e_copilot.sh');
 
   test('LLM outage shows chart data only, labelled, with sources and no prose answer', async ({ page }) => {
     await login(page, 'copilot_doc_a', PASS);

@@ -1,6 +1,6 @@
 # AUDIT.md: OpenEMR audit for the Clinical Co-Pilot
 
-Scope: this fork of OpenEMR (master), run locally in Docker with 3 stock demo patients and 13 synthetic patients (`scripts/seed_demo_patients.py`). Method: code reading with file references, live SQL (SELECT only), and timed HTTP calls. Not done: dynamic SQLi/XSS/CSRF testing, a production-scale load test, or review of non-core modules.
+Scope: this fork of OpenEMR (master), run locally in Docker with 3 stock demo patients and 13 synthetic patients (`scripts/copilot/seed_demo_patients.py`). Method: code reading with file references, live SQL (SELECT only), and timed HTTP calls. Not done: dynamic SQLi/XSS/CSRF testing, a production-scale load test, or review of non-core modules.
 
 ## Summary (key findings)
 

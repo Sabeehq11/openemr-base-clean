@@ -3,7 +3,7 @@
 
 Prints SQL to stdout. Deterministic (seeded). Includes deliberate data-quality
 defects (missing DOB/allergy, duplicate patient, stale labs) for the audit.
-Usage: python3 scripts/seed_demo_patients.py | docker exec -i <mysql> mariadb -uroot -proot openemr
+Usage: python3 scripts/copilot/seed_demo_patients.py | docker exec -i <mysql> mariadb -uroot -proot openemr
 """
 import random
 import uuid

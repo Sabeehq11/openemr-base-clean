@@ -9,7 +9,7 @@
  *
  * Run inside the openemr container:
  *   docker exec -e COPILOT_FIXTURE_PASSWORD=... development-easy-light-openemr-1 \
- *     php /var/www/localhost/htdocs/openemr/scripts/authz_fixture.php
+ *     php /var/www/localhost/htdocs/openemr/scripts/copilot/authz_fixture.php
  * Prints JSON with user ids and patient uuids (no passwords).
  */
 
@@ -21,7 +21,7 @@ if (PHP_SAPI !== 'cli') {
 
 $_GET['site'] = 'default';
 $ignoreAuth = true;
-require_once __DIR__ . '/../interface/globals.php';
+require_once __DIR__ . '/../../interface/globals.php';
 
 use OpenEMR\Common\Acl\AclExtended;
 use OpenEMR\Common\Auth\AuthHash;

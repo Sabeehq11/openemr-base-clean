@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Security gate for exposing the local OpenEMR through a tunnel. Read-only: it checks and reports, it never changes anything.
-# Exit 0 only if every check passes. Run before ./scripts/tunnel.sh (which calls it). Synthetic data only.
+# Exit 0 only if every check passes. Run before ./scripts/copilot/tunnel.sh (which calls it). Synthetic data only.
 set -uo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 DB="${DB_CONTAINER:-development-easy-light-mysql-1}"
 OE="${OE_CONTAINER:-development-easy-light-openemr-1}"
 DB_ROOT_PASS="${DB_ROOT_PASS:-root}"
@@ -42,6 +42,6 @@ check "agent/.env and module config.local.php are git-ignored" \
   'git check-ignore -q agent/.env && git check-ignore -q interface/modules/custom_modules/oe-module-copilot/config.local.php'
 check "no .env or config.local.php was ever committed" \
   '[ -z "$(git log --all --name-only --pretty=format: | grep -E "(^|/)(\.env|config\.local\.php)$" | sort -u)" ]'
-check "secret scan of tracked files and history finds nothing" 'python3 scripts/secret_scan.py'
+check "secret scan of tracked files and history finds nothing" 'python3 scripts/copilot/secret_scan.py'
 
 exit $fail

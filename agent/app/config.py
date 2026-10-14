@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     oauth_client_secret: SecretStr = SecretStr("")
     data_dir: str = "./data"
     tool_timeout_s: float = 5.0
-    max_inflight_chats: int = 0  # opt-in cap on chats in progress; over it, 503 + Retry-After (docs/PERFORMANCE.md: not a net win, so off)
+    max_inflight_chats: int = 0  # opt-in cap on chats in progress; over it, 503 + Retry-After (docs/week1/PERFORMANCE.md: not a net win, so off)
     rate_limit_per_min: int = 60  # per verified user across chat and tool calls; 0 disables
 
 

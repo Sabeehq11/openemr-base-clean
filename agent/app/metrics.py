@@ -8,8 +8,8 @@ from dataclasses import dataclass
 
 from .tracing import TraceStore
 
-# Alert definitions (ARCHITECTURE.md section 7). Minimum sample sizes stop one slow request from paging anyone.
-# 25 s, not 12 s: with the real model a healthy request has p50 ~14 s and p95 ~19 s (docs/PERFORMANCE.md), so 12 s fired
+# Alert definitions (docs/week1/ARCHITECTURE.md section 7). Minimum sample sizes stop one slow request from paging anyone.
+# 25 s, not 12 s: with the real model a healthy request has p50 ~14 s and p95 ~19 s (docs/week1/PERFORMANCE.md), so 12 s fired
 # on normal traffic. Overloaded runs reached p95 31-44 s, so 25 s still fires when something is really wrong.
 P95_LIMIT_MS, P95_WINDOW_S = 25_000.0, 300
 ERR_LIMIT, ERR_WINDOW_S = 0.05, 600

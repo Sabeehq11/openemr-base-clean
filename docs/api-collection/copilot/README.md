@@ -18,7 +18,7 @@ collection there costs nothing and never touches the demo agent's data or audit 
 docker compose -p agent-load -f loadtest/docker-compose.yml up -d --build
 
 # 2. put the values for this run into your shell. Tokens live for minutes, so repeat before each run.
-eval "$(scripts/copilot_collection_env.sh)"
+eval "$(scripts/copilot/copilot_collection_env.sh)"
 
 # 3. run everything
 cd docs/api-collection/copilot
@@ -28,7 +28,7 @@ npx @usebruno/cli run --env stub --env-file environments/stub.bru --insecure
 `--insecure` is only for the local OpenEMR dev stack, which has a self-signed certificate (the two `fhir-*` requests
 call it directly). The signed requests go to the agent over plain HTTP.
 
-`scripts/copilot_collection_env.sh` only prints `export` lines. It reads the fixture user and patient UUIDs from
+`scripts/copilot/copilot_collection_env.sh` only prints `export` lines. It reads the fixture user and patient UUIDs from
 `agent/data/fixture.json`, mints a short-lived read-only user token with the module's own issuer, and reads the signing
 secret and dashboard password from the git-ignored `agent/.env`. Nothing secret is stored in this folder: the `stub`
 environment refers to `process.env.COPILOT_*`.

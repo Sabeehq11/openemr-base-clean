@@ -185,11 +185,11 @@ Pass and fail is mostly deterministic (schema, citation resolution, exact-match 
 ## 12. Checkpoint 2 as built (appended; supersedes the plan above where they differ)
 
 What exists: `agent/` (FastAPI, Pydantic v2, Python 3.12 container), `interface/modules/custom_modules/oe-module-copilot/`,
-`evals/`, and Playwright specs in `tests/playwright/specs/`. Setup and endpoints: [agent/README.md](agent/README.md).
+`evals/`, and Playwright specs in `tests/playwright/specs/`. Setup and endpoints: [agent/README.md](../../agent/README.md).
 
 | Plan said | As built | Why |
 |---|---|---|
-| Per-physician allow-list from provider of record | Active FHIR CareTeam membership, read with the user's own token, checked on every request (section 6.1, [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md)) | Measured: OpenEMR lets any clinician token read any patient, and `providerID` is not exposed in FHIR |
+| Per-physician allow-list from provider of record | Active FHIR CareTeam membership, read with the user's own token, checked on every request (section 6.1, [agent/AUTHZ_PROOF.md](../../agent/AUTHZ_PROOF.md)) | Measured: OpenEMR lets any clinician token read any patient, and `providerID` is not exposed in FHIR |
 | Token from SMART EHR launch | Authorization-code token for the logged-in user, issued by the module for the session; `sub` must equal the claimed user. Password grant is off | The Tabs shell has no clean EHR-launch hook; the token is still user-bound, introspected and expiry-checked on every call |
 | Nurse and resident roles unsupported | Nurse and front-desk users are denied by the same fail-closed check (no care-team membership) | Tested in pytest, evals and Playwright |
 | One `get_medications` tool merges `lists` and `prescriptions` | Reads FHIR `MedicationRequest` (prescriptions) only; every result carries a note saying so | FHIR does not expose the `lists` store. None of the seeded patients has list-only medications, so nothing is lost in the demo data |
@@ -201,10 +201,10 @@ What exists: `agent/` (FastAPI, Pydantic v2, Python 3.12 container), `interface/
 **Verified results.**
 
 - Agent pytest: 321 passed with the live stack (`OE_LIVE=1`), including the real OAuth flow, revocation, expiry and cross-physician denial.
-- Evals, stub tier: 56/56, across invariant, boundary, conflict, authorization, adversarial and failure-injection categories ([evals/results/stub-latest.md](evals/results/stub-latest.md)). Audit findings D1 to D9 each have a case. D10 (no vitals tool) and D11 (fixed in the seeder) are not covered, and D5 is a recorded known gap.
+- Evals, stub tier: 56/56, across invariant, boundary, conflict, authorization, adversarial and failure-injection categories ([evals/results/stub-latest.md](../../evals/results/stub-latest.md)). Audit findings D1 to D9 each have a case. D10 (no vitals tool) and D11 (fixed in the seeder) are not covered, and D5 is a recorded known gap.
 - PHPUnit isolated: 23 tests for request signing parity, pid-to-UUID resolution and the chat proxy.
 - Playwright: 24 tests (the original 7 plus dock, clickable citation cards, advice declines, follow-up, denials, markup safety and LLM-down mode).
-- Bruno HTTP collection: 12 assertions ([docs/api-collection/copilot](docs/api-collection/copilot)).
+- Bruno HTTP collection: 12 assertions ([docs/api-collection/copilot](../api-collection/copilot)).
 
 **Known limits carried forward.** The care team is the access list, so care-team edits are an access-control change and
 are not yet audited. Any care-team practitioner is admitted, not only physicians. Load testing and the AI cost
@@ -213,8 +213,8 @@ tier is on demand and its results are not part of the 56/56 figure.
 
 ## 13. Checkpoint 3 as built (load tests, baselines, cost, hardening)
 
-Documents: [docs/PERFORMANCE.md](docs/PERFORMANCE.md) (baselines and rerun commands) and
-[docs/AI_COST_ANALYSIS.md](docs/AI_COST_ANALYSIS.md) (spend, per-request cost, projections). Harness: `loadtest/`.
+Documents: [PERFORMANCE.md](PERFORMANCE.md) (baselines and rerun commands) and
+[AI_COST_ANALYSIS.md](AI_COST_ANALYSIS.md) (spend, per-request cost, projections). Harness: `loadtest/`.
 
 **Method.** Load runs hit a separate agent container with its own data volume, with real signed requests and real OAuth
 tokens. Every result is labelled `stub` (no model), `mock` (local replay of measured model latency, a simulation) or

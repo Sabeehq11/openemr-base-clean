@@ -15,7 +15,7 @@ def issue(user_uuid: str) -> str:
     env = load_env()
     out = subprocess.check_output([
         "docker", "exec", "-u", "apache", "development-easy-light-openemr-1", "php",
-        "/var/www/localhost/htdocs/openemr/scripts/copilot_issue_probe.php", env["OAUTH_CLIENT_ID"], user_uuid,
+        "/var/www/localhost/htdocs/openemr/scripts/copilot/copilot_issue_probe.php", env["OAUTH_CLIENT_ID"], user_uuid,
     ], text=True)
     return out.strip().splitlines()[-1]
 

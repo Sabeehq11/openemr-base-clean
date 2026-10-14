@@ -2,7 +2,7 @@
 
 Status: **PASSED** on the local stack (synthetic data only). Re-run with
 `cd agent && OE_LIVE=1 .venv/bin/python -m pytest tests/test_authz_unit.py tests/test_authz_live.py`.
-Fixture: `scripts/authz_fixture.php` (idempotent): physicians A and B, a nurse, a front-desk user, patients
+Fixture: `scripts/copilot/authz_fixture.php` (idempotent): physicians A and B, a nurse, a front-desk user, patients
 pid 100-111 split between A (even) and B (odd), one active CareTeam per patient naming only the owner.
 
 ## What OpenEMR itself enforces (measured, not assumed)

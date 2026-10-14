@@ -183,7 +183,7 @@ def _spent() -> float:
     return total
 
 
-# --- Added after the first six (see docs/AI_COST_ANALYSIS.md for the run ledger) ----------------------------------
+# --- Added after the first six (see docs/week1/AI_COST_ANALYSIS.md for the run ledger) ----------------------------------
 
 @live("live-uc2-what-changed-uses-changes-tool", "invariant",
       "UC-2: real model must call get_changes_since and cite what changed")

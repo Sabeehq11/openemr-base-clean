@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures';
 
-// Uses seeded demo data (scripts/seed_demo_patients.py): pid 100 = Maria Alvarez.
+// Uses seeded demo data (scripts/copilot/seed_demo_patients.py): pid 100 = Maria Alvarez.
 test.describe('Patient chart', () => {
   test('patient finder lists seeded patients', async ({ loggedIn }) => {
     await loggedIn.goto('/interface/main/finder/dynamic_finder.php');

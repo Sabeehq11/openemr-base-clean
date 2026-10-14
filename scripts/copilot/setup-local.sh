@@ -23,7 +23,7 @@ for arg in "$@"; do
     esac
 done
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 COMPOSE_DIR="$ROOT/docker/development-easy-light"
 OE=development-easy-light-openemr-1
 DB=development-easy-light-mysql-1
@@ -45,7 +45,7 @@ fi
 seeded=$(db -N -e "SELECT COUNT(*) FROM patient_data WHERE pid >= 100" 2>/dev/null || echo 0)
 if [ "$RESEED" = "1" ] || [ "${seeded:-0}" = "0" ]; then
     echo "Seeding synthetic patients..."
-    python3 "$ROOT/scripts/seed_demo_patients.py" | db
+    python3 "$ROOT/scripts/copilot/seed_demo_patients.py" | db
 else
     echo "Synthetic patients already present ($seeded rows); leaving data untouched (use --reseed to recreate)."
 fi

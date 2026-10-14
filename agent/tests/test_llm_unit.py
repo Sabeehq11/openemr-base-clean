@@ -72,7 +72,7 @@ def test_provider_selection():
     assert isinstance(make_llm(Settings(llm_provider="openrouter")), OpenRouterClient)
 
 
-# --- retry: measured need, see docs/PERFORMANCE.md (5% provider 429s became 5% degraded answers) ---
+# --- retry: measured need, see docs/week1/PERFORMANCE.md (5% provider 429s became 5% degraded answers) ---
 
 @pytest.fixture
 def fast_retry(monkeypatch):

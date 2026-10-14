@@ -22,18 +22,18 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 
 | Doc | Purpose |
 |-----|---------|
-| [AUDIT.md](AUDIT.md) | Security, performance, architecture, data quality and compliance audit |
-| [USERS.md](USERS.md) | Target user, workflow and use cases (UC-1 to UC-4) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs (section 12 = Checkpoint 2 as built, section 13 = Checkpoint 3) |
-| [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Load-test baselines (10 and 50 users), bottleneck analysis, rerun commands |
-| [docs/AI_COST_ANALYSIS.md](docs/AI_COST_ANALYSIS.md) | Measured cost per request, 100 to 100K user projections, architecture changes per tier |
+| [docs/week1/AUDIT.md](docs/week1/AUDIT.md) | Security, performance, architecture, data quality and compliance audit |
+| [docs/week1/USERS.md](docs/week1/USERS.md) | Target user, workflow and use cases (UC-1 to UC-4) |
+| [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) | Agent integration plan, verification strategy, tradeoffs (section 12 = Checkpoint 2 as built, section 13 = Checkpoint 3) |
+| [docs/week1/PERFORMANCE.md](docs/week1/PERFORMANCE.md) | Load-test baselines (10 and 50 users), bottleneck analysis, rerun commands |
+| [docs/week1/AI_COST_ANALYSIS.md](docs/week1/AI_COST_ANALYSIS.md) | Measured cost per request, 100 to 100K user projections, architecture changes per tier |
 | [agent/README.md](agent/README.md) | Co-Pilot setup guide, tests, endpoints, observability |
 
 **Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
 
 ## Architecture overview
 
-A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and a SQLite trace store (served at `/dashboard`; Langfuse is not deployed), each tied to one correlation ID that also goes out on every call to OpenEMR and the model provider. Details, trust boundaries and tradeoffs: [ARCHITECTURE.md](ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard, evals and load tests are built (Checkpoints 1 to 3). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
+A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and a SQLite trace store (served at `/dashboard`; Langfuse is not deployed), each tied to one correlation ID that also goes out on every call to OpenEMR and the model provider. Details, trust boundaries and tradeoffs: [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard, evals and load tests are built (Checkpoints 1 to 3). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
 
 ## Run the agent
 
@@ -54,16 +54,16 @@ The runnable API collection, including signed requests, is in [docs/api-collecti
 Requires Docker (about 8 GB RAM). First boot takes about 5 minutes.
 
 ```bash
-./scripts/setup-local.sh      # starts OpenEMR; seeds 13 synthetic patients only if missing (safe to re-run)
-./scripts/setup-local.sh --reseed       # recreate the synthetic patients (other data untouched)
-./scripts/setup-local.sh --reset-demo   # DESTRUCTIVE: wipe DB, reload stock demo data, then reseed
+./scripts/copilot/setup-local.sh      # starts OpenEMR; seeds 13 synthetic patients only if missing (safe to re-run)
+./scripts/copilot/setup-local.sh --reseed       # recreate the synthetic patients (other data untouched)
+./scripts/copilot/setup-local.sh --reset-demo   # DESTRUCTIVE: wipe DB, reload stock demo data, then reseed
 ```
 
 On a first run against a fresh stack, use `--reset-demo` once to load OpenEMR's stock demo patients (pid 1-3).
 
 - App: http://localhost:8300 (login `admin` / `pass`), phpMyAdmin: http://localhost:8310
 - The stack is `docker/development-easy-light` (OpenEMR flex image + MariaDB). Dev credentials are defaults, for local use only.
-- `scripts/seed_demo_patients.py` is deterministic. It adds meds, labs, vitals and encounters, plus deliberate data-quality defects (missing DOB, a duplicate patient, stale labs) used by the audit.
+- `scripts/copilot/seed_demo_patients.py` is deterministic. It adds meds, labs, vitals and encounters, plus deliberate data-quality defects (missing DOB, a duplicate patient, stale labs) used by the audit.
 
 ## Browser tests (Playwright)
 

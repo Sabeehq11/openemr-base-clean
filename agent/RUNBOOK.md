@@ -13,7 +13,7 @@ Where to look:
 Alert thresholds come from `app/metrics.py` and need at least 5 samples in the window, so one slow request never pages.
 
 ## high_latency_p95
-**Fires:** p95 request latency above 25 s over the last 5 minutes (measured healthy real-model p95 is about 19 s; see docs/PERFORMANCE.md).
+**Fires:** p95 request latency above 25 s over the last 5 minutes (measured healthy real-model p95 is about 19 s; see docs/week1/PERFORMANCE.md).
 **Patient impact:** clinicians wait too long for a brief. The loop caps at 20 s so nothing hangs forever.
 
 1. Open the dashboard. Look at the Tools table and the p95 numbers. Is one tool slow, or is it the LLM?

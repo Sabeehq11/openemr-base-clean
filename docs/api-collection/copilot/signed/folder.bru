@@ -7,7 +7,7 @@ docs {
   Requests here are signed exactly like the OpenEMR module signs them (agent/app/signing.py):
   HMAC-SHA256 over "v1 \n METHOD \n path \n timestamp \n nonce \n sha256(body) \n user \n sha256(token)".
   Every request gets a fresh timestamp and a fresh random nonce, so replay protection is exercised, not bypassed.
-  Needs: signing_secret, user_uuid, user_token (see scripts/copilot_collection_env.sh). Nothing secret is stored here.
+  Needs: signing_secret, user_uuid, user_token (see scripts/copilot/copilot_collection_env.sh). Nothing secret is stored here.
 }
 
 script:pre-request {
@@ -17,7 +17,7 @@ script:pre-request {
   const user = bru.getEnvVar("user_uuid");
   const token = bru.getEnvVar("user_token");
   if (!secret || !user || !token) {
-    throw new Error("signing_secret, user_uuid and user_token must be set; run scripts/copilot_collection_env.sh");
+    throw new Error("signing_secret, user_uuid and user_token must be set; run scripts/copilot/copilot_collection_env.sh");
   }
 
   // Bruno fills {{variables}} after pre-request scripts run, so fill them here before signing. What is signed must be

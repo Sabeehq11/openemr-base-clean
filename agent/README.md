@@ -2,7 +2,7 @@
 
 A FastAPI service that answers questions about one patient chart at a time. It is read-only, it only talks to OpenEMR
 with the logged-in physician's own OAuth token, and every answer passes a verifier before it is shown.
-Synthetic data only. Design: [../ARCHITECTURE.md](../ARCHITECTURE.md). Authorization findings: [AUTHZ_PROOF.md](AUTHZ_PROOF.md).
+Synthetic data only. Design: [../docs/week1/ARCHITECTURE.md](../docs/week1/ARCHITECTURE.md). Authorization findings: [AUTHZ_PROOF.md](AUTHZ_PROOF.md).
 On-call steps: [RUNBOOK.md](RUNBOOK.md).
 
 ```
@@ -16,7 +16,7 @@ Browser -> oe-module-copilot (PHP, session + CSRF, signs request) -> agent (Fast
 
 Needs Docker. The host needs only Python 3.10+ if you want to run the tests outside the container.
 
-1. **Start OpenEMR and seed it.** From the repo root: `./scripts/setup-local.sh` (see the root README).
+1. **Start OpenEMR and seed it.** From the repo root: `./scripts/copilot/setup-local.sh` (see the root README).
 2. **Create `agent/.env`.** `cp agent/.env.example agent/.env`, then fill in:
    - `MODULE_SIGNING_SECRET`, `AUDIT_HMAC_KEY`: `openssl rand -hex 32` each.
    - `DASHBOARD_TOKEN`: `openssl rand -hex 16`.
@@ -27,7 +27,7 @@ Needs Docker. The host needs only Python 3.10+ if you want to run the tests outs
    physicians, one active CareTeam per patient):
    ```bash
    docker exec -e COPILOT_FIXTURE_PASSWORD="$(grep ^COPILOT_FIXTURE_PASSWORD agent/.env | cut -d= -f2)" \
-     development-easy-light-openemr-1 php /var/www/localhost/htdocs/openemr/scripts/authz_fixture.php
+     development-easy-light-openemr-1 php /var/www/localhost/htdocs/openemr/scripts/copilot/authz_fixture.php
    ```
    It is idempotent and only adds rows. Checkpoint 1 patients are not changed.
 4. **OAuth client.** The agent's client is a confidential authorization-code client with read scopes only
@@ -37,7 +37,7 @@ Needs Docker. The host needs only Python 3.10+ if you want to run the tests outs
    (`oauth_password_grant=0`); the tests check that it is refused.
 5. **Module.** `cp interface/modules/custom_modules/oe-module-copilot/config.local.php.example .../config.local.php`
    and set `signing_secret` (same as `MODULE_SIGNING_SECRET`), `oauth_client_id`, and `agent_base_url`
-   (`http://agent:8400`). Then `./scripts/copilot_register_module.sh` registers and activates the module.
+   (`http://agent:8400`). Then `./scripts/copilot/copilot_register_module.sh` registers and activates the module.
 6. **Start the agent:** `docker compose -f agent/docker-compose.yml up -d --build`. It joins OpenEMR's compose network
    and is published on `127.0.0.1:8400` only.
 7. **Check it:** `curl localhost:8400/ready` returns `"status":"ready"`. Log in at https://localhost:9300 as
@@ -52,12 +52,12 @@ Needs Docker. The host needs only Python 3.10+ if you want to run the tests outs
 | Evals, stub tier | `PYTHONPATH=agent agent/.venv/bin/python -m evals.run` | 56 cases tagged by failure mode, results in `evals/results/` |
 | Evals, live Sonnet | `EVAL_MAX_USD=1.00 PYTHONPATH=agent agent/.venv/bin/python -m evals.run --tier live` | Same invariants on real model output, spend capped, opt-in |
 | Module (PHPUnit isolated) | `docker exec development-easy-light-openemr-1 sh -c 'cd /var/www/localhost/htdocs/openemr && vendor/bin/phpunit -c phpunit-isolated.xml --filter Copilot'` | Request signing parity, pid to UUID resolution |
-| Browser | `./scripts/e2e_copilot.sh` | Playwright, 24 tests (OpenEMR smoke plus Co-Pilot dock, citations, declines, denials, LLM-down), normal and LLM-down modes |
-| HTTP checks, including signed requests | `eval "$(scripts/copilot_collection_env.sh)"`, then `npx @usebruno/cli run --env stub --env-file environments/stub.bru --insecure` in `docs/api-collection/copilot` | Liveness, refusals, dashboard, signed UC-1/2/4, denial, tool contracts (stub model, no spend) |
+| Browser | `./scripts/copilot/e2e_copilot.sh` | Playwright, 24 tests (OpenEMR smoke plus Co-Pilot dock, citations, declines, denials, LLM-down), normal and LLM-down modes |
+| HTTP checks, including signed requests | `eval "$(scripts/copilot/copilot_collection_env.sh)"`, then `npx @usebruno/cli run --env stub --env-file environments/stub.bru --insecure` in `docs/api-collection/copilot` | Liveness, refusals, dashboard, signed UC-1/2/4, denial, tool contracts (stub model, no spend) |
 
 **Live tests and the database root password.** A few live tests (token revocation and expiry) change `api_token` rows
 through `docker exec ... mariadb -uroot`. That uses the `DB_ROOT_PASS` environment variable and falls back to the
-stock development password, so on an unmodified dev stack nothing is needed. If you ran `scripts/tunnel.sh harden`, the
+stock development password, so on an unmodified dev stack nothing is needed. If you ran `scripts/copilot/tunnel.sh harden`, the
 root password was rotated and the new value is in the git-ignored `deploy/tunnel/.env`. Load it into your shell for the
 run, without printing it:
 
@@ -95,8 +95,8 @@ The agent port is not published through the tunnel. Only OpenEMR is.
 
 ## Load tests and performance (Checkpoint 3)
 
-- Baselines, bottleneck analysis and rerun commands: [../docs/PERFORMANCE.md](../docs/PERFORMANCE.md).
-- Cost per request and projections: [../docs/AI_COST_ANALYSIS.md](../docs/AI_COST_ANALYSIS.md).
+- Baselines, bottleneck analysis and rerun commands: [../docs/week1/PERFORMANCE.md](../docs/week1/PERFORMANCE.md).
+- Cost per request and projections: [../docs/week1/AI_COST_ANALYSIS.md](../docs/week1/AI_COST_ANALYSIS.md).
 - Harness: [../loadtest/](../loadtest/). It runs against a separate `agent-load` container (own data volume), so demo
   traces and the audit chain are untouched. Every report is labelled `stub`, `mock` or `real`. `real` runs need
   `LOADTEST_MAX_USD` (at most 2.00) and a fixed request count.

@@ -1,4 +1,4 @@
-"""Scenario mix tied to USERS.md use cases. Each step is (use_case, question, new_conversation)."""
+"""Scenario mix tied to docs/week1/USERS.md use cases. Each step is (use_case, question, new_conversation)."""
 from __future__ import annotations
 
 import random

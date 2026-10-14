@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prints `export` lines for the signed Bruno requests (docs/api-collection/copilot). Prints values only; writes nothing.
 #
-#   eval "$(scripts/copilot_collection_env.sh)"          # then: cd docs/api-collection/copilot && npx @usebruno/cli run ...
+#   eval "$(scripts/copilot/copilot_collection_env.sh)"          # then: cd docs/api-collection/copilot && npx @usebruno/cli run ...
 #
 # Exports:
 #   COPILOT_USER_UUID      practitioner UUID of the fixture physician (agent/data/fixture.json)
@@ -13,7 +13,7 @@
 #   COPILOT_DASHBOARD_TOKEN DASHBOARD_TOKEN from agent/.env
 # Synthetic data only. The values go into your shell, not into any file in the repo.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 CONTAINER="${OPENEMR_CONTAINER:-development-easy-light-openemr-1}"
 
 read_env() { sed -n "s/^$1=//p" agent/.env | head -1; }
@@ -30,7 +30,7 @@ print(f'OTHER={fx["patient_uuids"][other]}')
 PY
 )"
 
-TOKEN="$(docker exec -u apache "$CONTAINER" php /var/www/localhost/htdocs/openemr/scripts/copilot_issue_probe.php \
+TOKEN="$(docker exec -u apache "$CONTAINER" php /var/www/localhost/htdocs/openemr/scripts/copilot/copilot_issue_probe.php \
   "$(read_env OAUTH_CLIENT_ID)" "$USER_UUID" | tail -n 1)"
 [ -n "$TOKEN" ] || { echo "could not mint a user token (is the OpenEMR container up?)" >&2; exit 1; }
 

@@ -1,7 +1,7 @@
 import { test, expect } from '../fixtures';
 import { login } from '../fixtures';
 
-// Needs the agent running (stub provider) and scripts/authz_fixture.php applied.
+// Needs the agent running (stub provider) and scripts/copilot/authz_fixture.php applied.
 // COPILOT_FIXTURE_PASSWORD is the fixture users' password (kept in agent/.env, never committed).
 const PASS = process.env.COPILOT_FIXTURE_PASSWORD ?? '';
 

@@ -208,7 +208,7 @@ def test_a_dose_lookup_is_still_answered():
 
 
 # --- concurrency guard: at 50 users OpenEMR saturates and authorization lookups time out, so signed, legitimate
-# --- users get false denials (docs/PERFORMANCE.md). Shedding at the door is the honest alternative.
+# --- users get false denials (docs/week1/PERFORMANCE.md). Shedding at the door is the honest alternative.
 
 async def test_guard_sheds_over_the_limit_with_503_and_retry_after_and_releases_slots():
     import asyncio
