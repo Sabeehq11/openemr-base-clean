@@ -37,7 +37,8 @@ def test_ready_ok_when_all_dependencies_ok(tmp_path, monkeypatch):
         return httpx.Response(200, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
-    r = make_client(tmp_path).get("/ready")
+    # The audit chain needs a key. Supply a synthetic one so the test never depends on a developer's git-ignored .env.
+    r = make_client(tmp_path, audit_hmac_key=SecretStr("test-only-audit-key-not-a-secret")).get("/ready")
     assert r.status_code == 200
     assert all(c["ok"] for c in r.json()["checks"].values())
 
