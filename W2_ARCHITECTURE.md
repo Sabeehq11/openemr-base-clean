@@ -1,6 +1,6 @@
 # W2_ARCHITECTURE.md: Clinical Co-Pilot, Week 2 (Multimodal Evidence Agent)
 
-Status: **C1 built (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C2 onward and do not exist yet. Items built in C1 are written plainly. Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
+Status: **C2 built (supervisor, two workers, `POST /v1/w2/chat`), on top of C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C3 onward and do not exist yet. Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
 
 Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-baseline` is written plainly. Anything Week 2 will add is marked **(planned)** at first mention in each section and listed in the table below. Planned items are never runnable until a later checkpoint says so.
 
@@ -16,7 +16,8 @@ Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-basel
 | `w2.db` (in `data_dir`) holding `w2_documents`, `w2_facts`, `w2_citations` | agent-side SQLite file and tables | C1 |
 | `agent/app/w2/rag/`, guideline corpus under `agent/corpus/` | retrieval code and data | C1 |
 | `W2_RERANK_MODEL`, `W2_VLM_MODEL`, `W2_EMBED_MODEL` | env vars | C1 |
-| `Supervisor`, `Handoff`, `WorkerResult` | graph types | C2 |
+| `Supervisor`, `Handoff`, `WorkerResult`, `GraphState`, `W2VerifiedAnswer` | graph and answer types (built) | C2 |
+| `w2_chat` module config key, default off | routes the module to `/v1/w2/chat` (built) | C2 |
 | `evals/w2/`, `evals/baseline.json`, `evals/gate.py` | eval suite and gate | C3 |
 | `.github/workflows/agent-evals.yml`, local pre-push hook | CI gate | C3 |
 | span and parent span IDs in `traces.db` | additive schema change | C4 |
@@ -33,7 +34,7 @@ Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-basel
 | Orchestration | One explicit loop, `AgentLoop` in `agent/app/loop.py` | A supervisor and two workers, wrapping `AgentLoop` |
 | Verification | `Verifier` in `agent/app/verifier.py` is the only path to the UI | Same verifier, extended to accept extracted-fact and guideline citations |
 | Writes | None. A Week 1 invariant eval asserts there is no write tool | One server-side `attach_and_extract` path, never callable by the model. The module (not the agent) writes lab rows into OpenEMR in the user's session |
-| Endpoint | `POST /v1/chat` | `POST /v1/w2/chat` **(planned)**. `/v1/chat` is untouched |
+| Endpoint | `POST /v1/chat` | `POST /v1/w2/chat`. `/v1/chat` is untouched |
 
 Isolation rules:
 1. New code lives only under `agent/app/w2/` and `agent/contracts/w2/`.
@@ -125,27 +126,27 @@ flowchart TD
   S -->|"limit hit or worker failed"| D["Degraded answer"]
 ```
 
-Roles (all **(planned)** except `AgentLoop` and the verifier):
-- **Supervisor:** a small state machine, not a model. It routes from typed state, so decisions are inspectable and unit-testable. A model is used only to write the final answer from verified inputs.
-- **intake-extractor:** runs `attach_and_extract` for an uploaded document that is not yet extracted, and reads stored facts for one that is.
+Roles (built in C2):
+- **Supervisor** (`agent/app/w2/supervisor.py`): a small state machine, not a model. It routes from typed state, so decisions are inspectable and unit-testable. A model is used only in Stage B, to write document and guideline claims from verified inputs.
+- **intake-extractor:** reads supported facts already stored in `w2.db` for this patient (settled in C2: no extraction at chat time; `unsupported` rows are counted and never used; demographics never reach the model).
 - **evidence-retriever:** runs the hybrid retriever and returns cited chunks only.
 - **Chart facts:** the existing Week 1 `AgentLoop`, called as a capability and not modified.
 
-Typed messages (Pydantic, **(planned)**):
+Typed messages (Pydantic, built in C2, frozen, `extra="forbid"`):
 - `Handoff`: `from_node`, `to_node`, `reason` (enum), `inputs_ref` (ids, never raw text), `correlation_id`, `step`.
 - `WorkerResult`: `worker`, `status` (`ok`, `empty`, `failed`, `timeout`), `refs` (ids of produced facts or chunks), `latency_ms`, `error_code`.
 
 Routing rules, in order, evaluated on every step:
 1. An uploaded document with no completed extraction: route to intake-extractor.
-2. The question asks for guidance or evidence, or extracted or chart values need support: route to evidence-retriever.
-3. The question needs chart data not yet fetched: run `AgentLoop`.
-4. Otherwise the state is `ready` and the answer is written and verified.
+2. Chart data not yet fetched: run `AgentLoop` (Stage A). Chart runs before retrieval so a denied or declined request stops before any retrieval or second model call.
+3. The question asks for guidance or evidence, or extracted lab values need support, and evidence is not yet retrieved: route to evidence-retriever.
+4. Otherwise the state is `ready` and Stage B writes and the W2 verifier checks document and guideline claims.
 5. A worker that fails or times out is recorded as such. The supervisor does not retry a failed extraction in a loop. It goes to a degraded answer that names the missing source, as Week 1 does for tool failures.
-6. Caps: at most 6 supervisor steps and a 40 s total deadline (to be tuned from measurement in C2). Hitting a cap produces a degraded answer with a note, never a hang.
+6. Caps: at most 6 supervisor steps and a 40 s total deadline (initial values; to be tuned from measurement in C5). Hitting a cap produces a degraded answer with a note, never a hang.
 
 Every handoff is one structured log event and one span, so the route can be rebuilt from the correlation ID alone.
 
-Answer rules: the answer model receives patient-record facts (chart and extracted) and guideline evidence in separate labelled blocks, and every clinical claim must carry a `Citation`. Week 1 refusals (diagnosis, dose or treatment direction) apply unchanged (`agent/app/advice.py`, `agent/app/rules.py`).
+Answer rules (two-stage, settled in C2): Stage A is the unchanged Week 1 loop and verifier; its verified chart claims, flags, notes and source cards are carried into the final answer unchanged and are never input to Stage B. Stage B receives only `[PATIENT DOCUMENT FACTS]` and `[GUIDELINE EVIDENCE]` blocks, cannot cite chart ids, and its claims are checked by the W2 verifier (`agent/app/w2/verify.py`). The final `W2VerifiedAnswer` keeps chart, document and guideline claims in separate groups, and every clinical claim carries a `Citation`. Week 1 refusals (diagnosis, dose or treatment direction) apply unchanged (`agent/app/advice.py`, `agent/app/rules.py`).
 
 ## 4. RAG design
 

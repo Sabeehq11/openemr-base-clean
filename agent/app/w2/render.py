@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Protocol
 
 from app.logging_setup import log_event
+from .safelog import error_code
 
 logger = logging.getLogger("agent.w2.render")
 
@@ -164,7 +165,7 @@ def render_pdf(data: bytes, max_pages: int, chain: list[PageRenderer] | None = N
         try:
             out = r.render(data, max_pages)
         except RenderError as e:
-            log_event(logger, "render_failed", renderer=r.name, error=str(e))
+            log_event(logger, "render_failed", renderer=r.name, error=error_code(e))
             continue
         if not out.pages:
             log_event(logger, "render_failed", renderer=r.name, error="no_pages")

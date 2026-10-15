@@ -82,8 +82,8 @@
         return card;
     }
 
-    function chip(sourceId, container, sources) {
-        var label = sourceId.split('/')[0] + ' ' + sourceId.split('/').pop().slice(0, 8);
+    function chip(sourceId, container, sources, labelOverride) {
+        var label = labelOverride || (sourceId.split('/')[0] + ' ' + sourceId.split('/').pop().slice(0, 8));
         var src = (sources || {})[sourceId];
         var c = el('button', 'copilot-cite', label);
         c.type = 'button';
@@ -115,10 +115,39 @@
         return map;
     }
 
+    // Week 2 claims carry whole citations (document or guideline), not ids into `sources`. Each citation becomes a
+    // read-only card showing where in the document or guideline the statement comes from.
+    function renderCitedClaims(box, claims, heading) {
+        if (!(claims || []).length) { return; }
+        box.appendChild(el('p', 'copilot-note', heading));
+        claims.forEach(function (c) {
+            var wrap = el('div', 'copilot-claim-wrap');
+            var row = el('p', 'copilot-claim');
+            var sources = {};
+            row.appendChild(el('span', 'copilot-claim-text', c.text));
+            (c.citations || []).forEach(function (ci) {
+                var guide = ci.source_type === 'guideline';
+                var key = guide ? ci.field_or_chunk_id : ci.source_id + '#' + ci.field_or_chunk_id;
+                sources[key] = {
+                    source_id: key, kind: guide ? 'guideline' : 'document', title: ci.source_id,
+                    fields: [{ label: guide ? 'Section' : 'Page', value: String(ci.page_or_section) },
+                             { label: guide ? 'Passage' : 'Quote', value: String(ci.quote_or_value) }]
+                };
+                row.appendChild(chip(key, wrap, sources, (guide ? 'Guideline ' : 'Document ') + ci.source_id.split('/').pop()));
+            });
+            wrap.insertBefore(row, wrap.firstChild);
+            box.appendChild(wrap);
+        });
+    }
+
+    // /v1/w2/chat nests the unchanged Week 1 answer under `chart` and adds two cited groups beside it; /v1/chat sends
+    // the Week 1 answer at the top level. Both shapes render here.
     function renderAnswer(data) {
         var box = el('div', 'copilot-msg copilot-answer');
-        var sources = indexSources(data.sources);
-        (data.claims || []).forEach(function (c) {
+        var w2 = !!data.chart && typeof data.chart === 'object';
+        var chart = w2 ? data.chart : data;
+        var sources = indexSources(chart.sources);
+        (chart.claims || []).forEach(function (c) {
             var wrap = el('div', 'copilot-claim-wrap');
             var row = el('p', 'copilot-claim copilot-' + c.kind);
             row.appendChild(el('span', 'copilot-claim-text', c.text));
@@ -127,13 +156,20 @@
             wrap.insertBefore(row, wrap.firstChild);
             box.appendChild(wrap);
         });
-        if (!(data.claims || []).length) {
+        var docs = w2 ? (data.document_claims || []) : [];
+        var guides = w2 ? (data.guideline_claims || []) : [];
+        renderCitedClaims(box, docs, 'From uploaded documents');
+        renderCitedClaims(box, guides, 'Guideline evidence');
+        if (!(chart.claims || []).length && !docs.length && !guides.length) {
             box.appendChild(el('p', 'copilot-claim', 'No verified statements could be produced for that question.'));
         }
-        if (data.dropped_count) {
-            box.appendChild(el('p', 'copilot-note', data.dropped_count + ' unverified statement(s) were withheld.'));
+        // Withheld statements from every stage are counted: Stage A's own count plus Stage B's.
+        var dropped = (data.dropped_count || 0) + (w2 ? (chart.dropped_count || 0) : 0);
+        if (dropped) {
+            box.appendChild(el('p', 'copilot-note', dropped + ' unverified statement(s) were withheld.'));
         }
-        (data.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); });
+        (chart.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); });
+        if (w2) { (data.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); }); }
         log.appendChild(box);
         log.scrollTop = log.scrollHeight;
     }

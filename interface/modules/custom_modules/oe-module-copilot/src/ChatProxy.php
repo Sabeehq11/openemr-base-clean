@@ -16,6 +16,8 @@ namespace OpenEMR\Modules\Copilot;
 final class ChatProxy
 {
     public const MAX_QUESTION = 1000;
+    public const PATH_W1 = '/v1/chat';
+    public const PATH_W2 = '/v1/w2/chat';
 
     /**
      * @param \Closure(string): string $tokenFor issues a user token for the given user uuid
@@ -31,6 +33,7 @@ final class ChatProxy
         private readonly \Closure $post,
         private readonly \Closure $nonce,
         private readonly \Closure $clock,
+        private readonly bool $w2Chat = false,
     ) {
     }
 
@@ -68,7 +71,8 @@ final class ChatProxy
         } catch (\Throwable) {
             return ['status' => 503, 'error' => 'token_unavailable'];
         }
-        $path = '/v1/chat';
+        // Default stays the Week 1 path. The browser never chooses it; only module config does.
+        $path = $this->w2Chat ? self::PATH_W2 : self::PATH_W1;
         $headers = $this->signer->headers('POST', $path, $body, $user, $token, ($this->clock)(), ($this->nonce)());
         $headers['x-correlation-id'] = $correlationId;
         $status = ($this->post)(rtrim($this->agentBaseUrl, '/') . $path, $headers, $body, $emit);

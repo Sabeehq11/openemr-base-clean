@@ -19,6 +19,7 @@ final readonly class ModuleConfig
         public string $agentBaseUrl,
         public string $signingSecret,
         public string $oauthClientId,
+        public bool $w2Chat = false,
     ) {
     }
 
@@ -36,7 +37,8 @@ final readonly class ModuleConfig
         if (!preg_match('#^https?://[A-Za-z0-9._\-]+(:\d+)?$#', rtrim($url, '/'))) {
             return null;
         }
-        return new self(rtrim($url, '/'), $secret, $client);
+        // Optional and off by default: route chat to the Week 2 supervisor path (/v1/w2/chat).
+        return new self(rtrim($url, '/'), $secret, $client, ($values['w2_chat'] ?? false) === true);
     }
 
     public static function load(string $moduleDir): ?self

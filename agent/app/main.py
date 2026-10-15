@@ -64,8 +64,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cfg.openrouter_model if cfg.llm_provider == "openrouter" else cfg.llm_provider,
         max_inflight=cfg.max_inflight_chats, gauge=app.state.load))
     if cfg.w2_enabled:  # Week 2 seam: routes do not exist at all unless switched on
-        from .w2.wiring import build_w2
-        app.include_router(build_w2(cfg, app.state.gateway, PatientAuthorizer(cfg), audit))
+        from .w2.wiring import ChatDeps, build_w2
+        app.include_router(build_w2(cfg, app.state.gateway, PatientAuthorizer(cfg), audit, ChatDeps(
+            app.state.runner, lambda: make_llm(cfg), lambda d, e: app.state.finalizer(d, e), ConversationStore(),
+            app.state.traces, cfg.openrouter_model if cfg.llm_provider == "openrouter" else cfg.llm_provider,
+            cfg.max_inflight_chats, app.state.load)))
     if isinstance(audit, _TeeAudit):
         app.include_router(build_dashboard_router(cfg, app.state.traces, audit.chain, app.state.load))
 

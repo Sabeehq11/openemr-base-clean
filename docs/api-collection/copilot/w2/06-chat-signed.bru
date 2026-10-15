@@ -1,0 +1,30 @@
+meta {
+  name: W2 chat: supervisor, workers and separate claim groups (signed)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{agent}}/v1/w2/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "What changed, and what do the guidelines say about A1c frequency?"
+  }
+}
+
+assert {
+  res.status: eq 200
+}
+
+docs {
+  Needs W2_ENABLED=1 and the signing pre-request script used by the other signed requests. The response is a stream of
+  Server-Sent Events: `conversation`, then one of `answer | declined | degraded | denied | error`, then `end`.
+  The `answer` event has `chart` (the unchanged Week 1 verified answer), `document_claims` and `guideline_claims`, each
+  claim with machine-readable citations. `notes` names any missing source. Upload a lab PDF first (01-upload-lab-pdf).
+  Each handoff is a `w2_handoff` log line; filter by the correlation id to rebuild the route.
+}

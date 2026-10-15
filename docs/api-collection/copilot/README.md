@@ -65,6 +65,6 @@ The per-user rate limit on the demo agent is 60 requests per minute, and each no
 
 `w2/` signs requests the same way as `signed/` and covers the four C1 endpoints: upload a synthetic lab PDF (twice, to see
 `duplicate: true`), read the stored extraction, report written OpenEMR record uuids, and guideline retrieval, plus an
-upload for another physician's patient (403). `w2-upload-unsigned.bru` at the top level must get 401. Set `lab_pdf_b64` to
+upload for another physician's patient (403). `w2-upload-unsigned.bru` at the top level must get 401. `w2/06-chat-signed.bru` calls `POST /v1/w2/chat` (the C2 supervisor path; answer groups chart, document and guideline claims separately) and `w2-chat-unsigned.bru` must get 401. Set `lab_pdf_b64` to
 `base64 -i agent/tests/fixtures/w2/lab_report.pdf | tr -d '\n'`. For an offline demo run the agent with
 `W2_ENABLED=true W2_USE_STUB_VLM=true`. The real OpenEMR lab rows are written by the module (`upload.php`), not by these requests.

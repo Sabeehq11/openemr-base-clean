@@ -12,6 +12,7 @@ from contracts.w2 import Citation, GuidelineChunk, RetrievalResult, RetrievalSta
 from .bm25 import BM25
 from .embed import EmbedError, Embedder, cosine
 from .rerank import RerankError, Reranker
+from ..safelog import error_code
 
 logger = logging.getLogger("agent.w2.retrieve")
 
@@ -61,7 +62,7 @@ class Retriever:
             ranked = self._reranker.rerank(query, docs, top)
             used = self._reranker.name
         except RerankError as e:
-            log_event(logger, "w2_rerank", status="skipped", error=str(e))
+            log_event(logger, "w2_rerank", status="skipped", error=error_code(e))
             skipped = True
             used = self._fallback.name if self._fallback else "none"
             ranked = self._fallback.rerank(query, docs, top) if self._fallback else [(i, 1.0) for i in range(top)]

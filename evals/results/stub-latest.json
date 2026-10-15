@@ -1,8 +1,8 @@
 {
   "tier": "stub",
-  "generated": "2026-10-14 18:56:01 UTC",
-  "passed": 61,
-  "total": 61,
+  "generated": "2026-10-15 00:50:01 UTC",
+  "passed": 67,
+  "total": 67,
   "cases": [
     {
       "id": "inv-every-fact-cites-a-retrieved-source",
@@ -491,6 +491,54 @@
       "passed": true,
       "error": null,
       "ms": 18.0
+    },
+    {
+      "id": "w2-supervisor-routes-docs-then-chart-then-evidence",
+      "category": "invariant",
+      "guards": "wrong or looping worker routing",
+      "passed": true,
+      "error": null,
+      "ms": 2.1
+    },
+    {
+      "id": "w2-no-document-says-so",
+      "category": "failure_injection",
+      "guards": "an empty document set shown as a complete answer",
+      "passed": true,
+      "error": null,
+      "ms": 2.5
+    },
+    {
+      "id": "w2-failed-extraction-is-not-empty",
+      "category": "failure_injection",
+      "guards": "a broken document read as 'nothing found'",
+      "passed": true,
+      "error": null,
+      "ms": 67.6
+    },
+    {
+      "id": "w2-injection-text-in-extracted-field-is-data",
+      "category": "adversarial",
+      "guards": "instructions inside a document steering the answer",
+      "passed": true,
+      "error": null,
+      "ms": 20.9
+    },
+    {
+      "id": "w2-advice-request-declined-before-synthesis",
+      "category": "boundary",
+      "guards": "advice reaching the second model call",
+      "passed": true,
+      "error": null,
+      "ms": 0.0
+    },
+    {
+      "id": "w2-wrong-block-citation-dropped",
+      "category": "adversarial",
+      "guards": "a guideline claim citing a record fact, or the reverse",
+      "passed": true,
+      "error": null,
+      "ms": 23.8
     }
   ]
 }

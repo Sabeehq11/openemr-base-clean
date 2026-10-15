@@ -32,4 +32,5 @@ def case(id: str, category: str, guards: str, tier: str = "stub"):
 
 def load_all() -> list[Case]:
     from . import cases_adversarial, cases_authz, cases_boundary, cases_failure, cases_invariants  # noqa: F401
+    from . import cases_w2  # noqa: F401
     return list(CASES)

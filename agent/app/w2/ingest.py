@@ -14,6 +14,7 @@ from app.logging_setup import log_event
 from contracts.w2 import DocStatus, DocType, DocumentRecord, ErrorCode, RenderMode
 
 from .extract import extract_intake, extract_lab
+from .safelog import error_code
 from .render import PageRenderer, Rendered, TextLine, render_pdf
 from .store import LAB_KIND, W2Store
 from .support import ExtractionError
@@ -85,7 +86,7 @@ class Ingestor:
         try:
             raw = await self._vlm.extract(doc_type, pages, native_pdf)
         except VlmError as e:
-            log_event(logger, "w2_extract", status="vlm_error", error=str(e), document_id=document_id)
+            log_event(logger, "w2_extract", status="vlm_error", error=error_code(e), document_id=document_id)
             return self._failed(patient_uuid, document_id, doc_type, sha, ErrorCode.VLM_UNAVAILABLE, mode, renderer)
         return self._build(patient_uuid, document_id, doc_type, sha, raw, text, mode, renderer, lines)
 
@@ -115,7 +116,7 @@ class Ingestor:
                 intake = extract_intake(raw, document_id, text, native, lines)
                 facts, date_ = _intake_facts(intake), None
         except ExtractionError as e:
-            log_event(logger, "w2_extract", status=str(e), document_id=document_id)
+            log_event(logger, "w2_extract", status=error_code(e), document_id=document_id)
             return self._failed(patient, document_id, doc_type, sha, ErrorCode.SCHEMA_INVALID, mode, renderer)
         rec = self._store.save_extracted(patient, document_id, doc_type, sha, facts, date_, mode, renderer,
                                          self._vlm.model)

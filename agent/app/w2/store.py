@@ -75,6 +75,13 @@ class W2Store:
                             (patient_uuid, sha256)).fetchone()
         return self.get(patient_uuid, row[0]) if row else None
 
+    def list_document_ids(self, patient_uuid: str, limit: int = 5) -> list[int]:
+        """Newest documents first, for one patient only. Read-only; used by the intake-extractor worker."""
+        with self._conn() as c:
+            rows = c.execute("SELECT document_id FROM w2_documents WHERE patient_uuid=? "
+                             "ORDER BY created_at DESC, document_id DESC LIMIT ?", (patient_uuid, limit)).fetchall()
+        return [r[0] for r in rows]
+
     def get(self, patient_uuid: str, document_id: int) -> DocumentRecord | None:
         with self._conn() as c:
             d = c.execute(
