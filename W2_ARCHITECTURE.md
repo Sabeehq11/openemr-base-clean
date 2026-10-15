@@ -1,6 +1,6 @@
 # W2_ARCHITECTURE.md: Clinical Co-Pilot, Week 2 (Multimodal Evidence Agent)
 
-Status: **C2 built (supervisor, two workers, `POST /v1/w2/chat`), on top of C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C3 onward and do not exist yet. Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
+Status: **C3 built (50-case golden set, five rubrics, eval gate, CI workflow), on top of C2 (supervisor, two workers, `POST /v1/w2/chat`) and C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C4 onward and do not exist yet. C3 detail: [docs/week2/checkpoints/C3-eval-gate.md](docs/week2/checkpoints/C3-eval-gate.md). Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
 
 Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-baseline` is written plainly. Anything Week 2 will add is marked **(planned)** at first mention in each section and listed in the table below. Planned items are never runnable until a later checkpoint says so.
 
@@ -41,13 +41,13 @@ Isolation rules:
 2. Week 1 files change only at named seams: tracing (`agent/app/tracing.py`), metrics (`agent/app/metrics.py`), readiness in `agent/app/main.py`, the verifier's citation types, and the eval registry (`evals/registry.py`). Each change is additive and gets a migration note in section 6.
 3. `W2_ENABLED` defaults to off. With it off, the agent behaves exactly as at `w1-baseline`.
 4. The supervisor calls `AgentLoop` as the chart-facts capability and does not edit it.
-5. Week 1 tests (522 passed, 30 skipped offline) and stub evals (60/60) must pass with `W2_ENABLED` both 0 and 1.
+5. Week 1 tests (522 passed, 30 skipped offline) and stub evals (67/67) and the 50-case golden gate must pass with `W2_ENABLED` both 0 and 1.
 
 Technical debt carried from Week 1 (documented here, resolved in the checkpoint named):
 
 | Debt | Resolution |
 |---|---|
-| No CI runs `agent/` tests or `evals/` | C3: GitHub Actions workflow plus local hook |
+| No CI runs `agent/` tests or `evals/` | C3 (done): `w2-eval-gate.yml` workflow plus `scripts/w2/pre-push` hook |
 | No deployed app (README says TBD) | C5 |
 | Spans have no span or parent ID | C4: additive columns |
 | `/ready` is binary (200 or 503) | C4: `ready`, `degraded`, `not_ready` |
@@ -169,7 +169,7 @@ Failure handling: the reranker call has a timeout and one retry. If it is unreac
 
 ## 5. Eval design
 
-The Week 2 golden set **(planned, C3)** has 50 cases under `evals/w2/`, versioned in git as JSON plus fixture files, so it can be rebuilt from the repo alone.
+The Week 2 golden set (built in C3) has 50 cases under `evals/w2/golden/`, versioned in git as JSONL plus the existing fixture files, so it can be rebuilt from the repo alone. 28 cases are flagged `critical` (all refusals and PHI cases, injected input, wrong flags, bad citations, record-versus-guideline mixing).
 
 | Category | Cases | Exercises |
 |---|---|---|
@@ -192,9 +192,11 @@ Boolean rubrics, evaluated per case (a case lists the ones that apply):
 
 Judging: rubrics are deterministic checks wherever possible (schema parse, id resolution, exact match, regex and scanner for PHI). Only wording checks may use a model judge, with a fixed prompt, temperature 0 and a committed configuration. The gate runs the stub tier only, so it is repeatable and costs nothing. A live tier stays on demand with a spend cap, as in Week 1.
 
-Gate **(planned)**: `evals/baseline.json` stores per-category pass rates. The build fails if any category drops by more than 5 percentage points against the baseline, or any category falls below an absolute floor (initially 90%). The PRD grading step injects a small regression, so C3 must demonstrate one failing run before it is accepted.
+Gate (built in C3): `evals/w2/baseline.json` stores per-rubric and per-category pass rates, the case ids and the critical flags. `python -m evals.gate` fails the build when a rubric drops more than 5 points, a rubric is below its threshold (100 for `factually_consistent`, `safe_refusal`, `no_phi_in_logs`; 90 for the others), **any critical case fails** (zero tolerance, because one failure in 50 moves a rate only 2 to 5 points), the set changes shape (a deleted case or removed flag), or any of the 67 existing stub cases fails. Per-category rates are reported and diffed but the blocking rules are per rubric and per critical case. The PRD grading step injects a small regression; `scripts/w2/gate_demo.sh` does this for three fault classes and saves the evidence.
 
-Week 1 evals (60 stub cases in `evals/`) keep running in the same job and must stay at 60/60.
+Updating the baseline: `python -m evals.gate --update-baseline`, run from a clean tree in the same pull request that changes the cases, so the reviewer sees the diff. It refuses to record a failing run. CI never runs it.
+
+The existing stub evals (67 cases in `evals/`, including Week 1 and C2) run inside the gate and must all pass.
 
 ## 6. Data model and authority
 
@@ -207,7 +209,7 @@ Principle: OpenEMR stays authoritative for the patient record. The agent stores 
 | Extracted facts `w2_facts` | Agent SQLite (derived) | `document_id`, extractor version, model name, extraction time | Same as above | Strict schema; `unsupported` kept and flagged |
 | Citations `w2_citations` | Agent SQLite (derived) | Fact id, page, quote, bbox | Same as above | `bbox` required for `extracted`; quote must contain the value |
 | Guideline chunks and index | Repo (`agent/corpus/`), index built at start | Source publisher, year, licence | Public data | Front matter required; chunk ids stable |
-| Golden set **(planned)** | Repo (`evals/w2/`) | Versioned in git | Synthetic only | Rubrics defined per case |
+| Golden set | Repo (`evals/w2/golden/`) | Versioned in git | Synthetic only | Rubrics defined per case |
 | Traces and audit | Agent SQLite `traces.db`, `audit.db` (Week 1) | Correlation ID | Operators only | HMAC chain on audit (Week 1) |
 
 Authority rules:
@@ -263,10 +265,10 @@ Authorization:
 | Unit: supervisor **(planned)** | Routing table, step and deadline caps, worker failure paths | Wrong route; loops; hangs | PR gate |
 | Contract: supervisor to worker **(planned)** | `Handoff` and `WorkerResult` shapes, one event per handoff | Silent handoff changes; untraceable routes | PR gate |
 | Integration (stub tier) | Upload to extract to store to answer, with a fake VLM and fake OpenEMR | A broken seam between components | PR gate |
-| Golden evals (50 cases) **(planned)** | The five boolean rubrics over the categories in section 5 | Regression in quality or safety | PR gate (blocking) |
+| Golden evals (50 cases) | The five boolean rubrics over the categories in section 5, plus zero tolerance on critical cases | Regression in quality or safety | PR gate (blocking, `w2-eval-gate.yml`; required status is a branch-protection setting) |
 | Week 1 regression | The 522 offline tests and 60 evals at `w1-baseline` | Week 2 breaking Week 1 | PR gate, `W2_ENABLED` 0 and 1 |
 | Authorization and isolation | Another patient's document id returns nothing; no-token request refused | Cross-patient leakage | PR gate |
-| PHI scan **(planned)** | Logs, traces, outputs and fixtures | PHI in logs | PR gate (C4) |
+| PHI scan | `no_phi_in_logs` over captured logs, a static scan of every `app/w2` logging call, a data scan of the golden set and fixtures | PHI in logs | PR gate (logs and code in C3; traces and dashboards in C4) |
 | Live tier, on demand | Real VLM and reranker on synthetic documents | Provider drift; prompt regressions | Manual, spend-capped |
 | Browser tests (Playwright) | Upload, answer and click-to-source in the real UI | UI wiring; overlay misplacement | Manual before submission, with the live stack |
 | **Not tested** | Real patient documents (none are used); VLM accuracy on arbitrary scans (only the synthetic set is measured); production load beyond the measured baseline | Stated here so no one assumes coverage | n/a |

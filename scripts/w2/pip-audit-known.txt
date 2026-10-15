@@ -1,0 +1,28 @@
+# Known dependency advisories accepted for now. One per line: package version advisory fixed-in.
+# Each needs an upgrade (FastAPI pins Starlette, so that is a framework bump). Remove a line when its pin is upgraded.
+# scripts/w2/pip_audit.sh fails on any advisory NOT listed here, so a newly published one blocks the build.
+pyjwt 2.10.1 PYSEC-2025-183 
+pyjwt 2.10.1 PYSEC-2026-120 2.12.0
+pyjwt 2.10.1 PYSEC-2026-175 2.13.0
+pyjwt 2.10.1 PYSEC-2026-176 2.12.1
+pyjwt 2.10.1 PYSEC-2026-176 2.13.0
+pyjwt 2.10.1 PYSEC-2026-177 2.13.0
+pyjwt 2.10.1 PYSEC-2026-178 2.13.0
+pyjwt 2.10.1 PYSEC-2026-179 2.13.0
+pyjwt 2.10.1 PYSEC-2026-4140 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4141 2.15.0
+pyjwt 2.10.1 PYSEC-2026-4144 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4145 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4147 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4148 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4149 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4152 2.14.0
+pyjwt 2.10.1 PYSEC-2026-4183 2.15.0
+pytest 8.3.4 PYSEC-2026-1845 9.0.3
+starlette 0.41.3 PYSEC-2026-161 1.0.1
+starlette 0.41.3 PYSEC-2026-1941 0.47.2
+starlette 0.41.3 PYSEC-2026-1942 0.49.1
+starlette 0.41.3 PYSEC-2026-2280 1.1.0
+starlette 0.41.3 PYSEC-2026-2281 1.1.0
+starlette 0.41.3 PYSEC-2026-248 1.3.0
+starlette 0.41.3 PYSEC-2026-249 1.3.1

@@ -1,0 +1,82 @@
+##
+# Week 2 agent eval gate. Blocks a pull request when the agent's tests, the 50-case golden set, the baseline gate,
+# the dependency audit or the secret scan fail. No network call to a model, no API key: the vision and language
+# models are deterministic stubs, so the result depends only on the code in the PR.
+#
+# This repository's default branch is main (the upstream OpenEMR workflows say master, so both are listed). Work
+# happens on week2-agentforge, so pushes there run the gate too.
+# To make this block merging, mark the "W2 eval gate" job as a required status check in the repository's branch
+# protection settings for main. That is a repository setting and cannot be set from code. The upstream
+# "All Checks Passed" workflow only watches master, so it does not wait for this job here.
+
+name: W2 Eval Gate
+
+on:
+  push:
+    branches:
+    - main
+    - master
+    - week2-agentforge
+    paths:
+    - 'agent/**'
+    - 'evals/**'
+    - 'scripts/copilot/secret_scan.py'
+    - 'scripts/w2/**'
+    - '.github/workflows/w2-eval-gate.yml'
+  pull_request:
+    branches:
+    - main
+    - master
+    paths:
+    - 'agent/**'
+    - 'evals/**'
+    - 'scripts/copilot/secret_scan.py'
+    - 'scripts/w2/**'
+    - '.github/workflows/w2-eval-gate.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  w2-eval-gate:
+    name: W2 eval gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # the secret scan reads history
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'  # matches agent/Dockerfile
+        cache: pip
+        cache-dependency-path: agent/requirements.txt
+
+    - name: Install agent dependencies
+      run: python -m pip install -r agent/requirements.txt pip-audit
+
+    - name: Agent tests (unit, schema, contract, extraction regression, golden cases)
+      working-directory: agent
+      run: python -m pytest tests -m "not live" -q
+
+    - name: Golden set and eval gate
+      run: python -m evals.gate
+
+    - name: Dependency audit (fails on any advisory not recorded in scripts/w2/pip-audit-known.txt)
+      run: scripts/w2/pip_audit.sh
+
+    - name: Secret scan
+      run: python scripts/copilot/secret_scan.py
+
+    - name: Upload eval results
+      if: always()  # the evidence is most useful when the gate fails
+      uses: actions/upload-artifact@v4
+      with:
+        name: w2-eval-results
+        path: evals/results/
+        if-no-files-found: warn

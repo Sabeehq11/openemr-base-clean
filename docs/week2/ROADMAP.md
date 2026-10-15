@@ -58,7 +58,7 @@ Dates are from the PRD: MVP Tuesday 11:59 PM, Early Submission Thursday 11:59 PM
 | C0 | Baseline and architecture defense | done |
 | C1 | MVP: ingest, extract, retrieve | done (see [checkpoints/C1](checkpoints/C1-mvp-ingest-extract-retrieve.md)) |
 | C2 | Supervisor and two workers | done (see [checkpoints/C2](checkpoints/C2-supervisor-and-workers.md)) |
-| C3 | Eval gate (the PRD hard gate) | not started |
+| C3 | Eval gate (the PRD hard gate) | done (see [checkpoints/C3](checkpoints/C3-eval-gate.md)) |
 | C4 | Observability, contracts, ops | not started |
 | C5 | Deploy, performance, defend | not started |
 
@@ -79,10 +79,10 @@ Docs and records only. Tag `w1-baseline`, record a measured baseline, write `W2_
 - Accept: every handoff is a logged event; a trace is reconstructable from the correlation ID.
 
 ### C3. Eval gate
-- 50-case golden set in the repo with boolean rubrics: `schema_valid`, `citation_present`, `factually_consistent`, `safe_refusal`, `no_phi_in_logs`.
-- Baseline file and a gate script that fails on a drop of more than 5 points in any category or below an absolute threshold.
-- PR-blocking GitHub workflow plus a local hook. Stub tier only in the gate.
-- Accept: an injected regression fails the gate, with evidence kept.
+- 50-case golden set in the repo (`evals/w2/golden/`, 12/10/8/8/6/6) with boolean rubrics: `schema_valid`, `citation_present`, `factually_consistent`, `safe_refusal`, `no_phi_in_logs`.
+- Baseline file (`evals/w2/baseline.json`) and `python -m evals.gate`: fails on a drop of more than 5 points in any rubric, on a rubric below its threshold, and on **any failed critical case** (28 of 50), and when the set is weakened by deletion or un-flagging.
+- PR-blocking GitHub workflow (`w2-eval-gate.yml`; branch protection is a manual repository setting) plus a local pre-push hook. Stub tier only in the gate.
+- Accept: an injected regression fails the gate, with evidence kept. Met: three injected faults (citation, safety, PHI) each exit 1, saved in `evals/results/regression-evidence-<date>.md`.
 
 ### C4. Observability, contracts, ops
 - Correlation ID through ingestion, VLM, retrieval, handoffs and OpenEMR writes; parent span IDs; W2 events in the existing structured log format.
