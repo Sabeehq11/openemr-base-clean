@@ -72,5 +72,5 @@ upload for another physician's patient (403). `w2-upload-unsigned.bru` at the to
 C4 adds two top-level requests that also need `W2_ENABLED=true`: `w2-ready.bru` (no auth; `/ready` reports
 `w2_checks`; a Week 2 problem alone gives `degraded` with a 200, never a 503) and `w2-dashboard.bru` (operator Basic auth
 with `dashboard_token`, as `dashboard.bru`; `dashboard.json` has a `w2` section and the three Week 2 alerts, with
-`w2_eval_regression` reporting no samples outside a source checkout). The endpoint contract is `docs/week2/openapi.yaml`, checked against the
+`w2_eval_regression` reporting no samples outside a source checkout). C5 adds `w2/07-page.bru` (one page image for click-to-source; run after the upload request). The endpoint contract is `docs/week2/openapi.yaml`, checked against the
 app by `agent/tests/test_w2_openapi_unit.py`.

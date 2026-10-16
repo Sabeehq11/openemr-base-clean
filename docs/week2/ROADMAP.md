@@ -60,7 +60,7 @@ Dates are from the PRD: MVP Tuesday 11:59 PM, Early Submission Thursday 11:59 PM
 | C2 | Supervisor and two workers | done (see [checkpoints/C2](checkpoints/C2-supervisor-and-workers.md)) |
 | C3 | Eval gate (the PRD hard gate) | done (see [checkpoints/C3](checkpoints/C3-eval-gate.md)) |
 | C4 | Observability, contracts, ops | done (see [checkpoints/C4](checkpoints/C4-observability-and-contracts.md)) |
-| C5 | Deploy, performance, defend | not started |
+| C5 | Deploy, performance, defend | built; the real-model run and the live apply await approval (see [checkpoints/C5](checkpoints/C5-deploy-and-defend.md)) |
 
 ### C0. Baseline and architecture defense
 Docs and records only. Tag `w1-baseline`, record a measured baseline, write `W2_ARCHITECTURE.md`, split the README into Week 1 and Week 2 sections. No application code changes. Detail: [checkpoints/C0-baseline.md](checkpoints/C0-baseline.md).

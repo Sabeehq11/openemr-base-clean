@@ -75,6 +75,15 @@ def test_restoring_leaves_sources_kinds_and_other_text_untouched():
     assert out.claims[0].kind is ClaimKind.FACT and out.notes == ["note about Real Name"]
 
 
+def test_physician_facing_text_decodes_html_entities_without_changing_the_claim():
+    encoded = "penicillin " + "&" + "amp; sulfa"
+    out = restore_patient_reference(answer_with("[PATIENT] takes " + encoded, "HbA1c is 7.9 %"),
+                                    [summary_env(name="Ada " + "&" + "amp; Co")])
+    assert out.claims[0].text == "Ada & Co takes penicillin & sulfa"
+    assert out.claims[1].text == "HbA1c is 7.9 %"
+    assert out.claims[0].source_ids == ["Patient/p-1"]
+
+
 def test_system_prompt_still_tells_the_model_to_use_the_placeholder_not_a_name():
     assert PATIENT_PLACEHOLDER in SYSTEM_PROMPT and "{placeholder}" not in SYSTEM_PROMPT
 

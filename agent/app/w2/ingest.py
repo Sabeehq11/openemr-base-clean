@@ -90,6 +90,20 @@ class Ingestor:
                 raise RejectedUpload("too_many_pages")
         return kind
 
+    def page_image(self, data: bytes, page: int) -> tuple[bytes, str, int] | None:
+        """One page of an already-stored document as an image, for the click-to-source viewer: (bytes, mime type,
+        total pages). Nothing is stored. None when the page does not exist or no renderer could produce it.
+        Raises RejectedUpload for a file that is not a PDF or a supported image."""
+        kind = sniff(data)
+        if kind != "pdf":
+            return (data, "image/png" if kind == "png" else "image/jpeg", 1) if page == 1 else None
+        if page < 1 or page > self._max_pages:
+            return None
+        rendered = render_pdf(data, page, self._chain)
+        if rendered is None or page > rendered.total_pages or len(rendered.pages) < page:
+            return None
+        return rendered.pages[page - 1], "image/png", rendered.total_pages
+
     async def ingest(self, patient_uuid: str, document_id: int, doc_type: DocType, data: bytes) -> IngestResult:
         if len(data) > self._max_bytes:
             raise RejectedUpload("too_large")
@@ -97,8 +111,14 @@ class Ingestor:
         sha = hashlib.sha256(data).hexdigest()
         existing = self._store.find_by_hash(patient_uuid, sha)
         if existing is not None and existing.status is DocStatus.EXTRACTED:
-            log_event(logger, "w2_ingest", status="duplicate", document_id=existing.document_id)
-            return IngestResult(existing, True)
+            # The bytes were already extracted for this patient. Reuse that extraction, but under the document id
+            # OpenEMR assigned this request: a page image is only shown when those two ids are the same.
+            rebound = self._store.rebind(patient_uuid, existing.document_id, document_id)
+            if rebound is None:
+                log_event(logger, "w2_ingest", status="duplicate", document_id=existing.document_id)
+                return IngestResult(existing, True)
+            log_event(logger, "w2_ingest", status="duplicate", document_id=rebound.document_id)
+            return IngestResult(rebound, True)
         pages, text, renderer, mode, native_pdf, lines = self._pages(data, kind)
         if mode is RenderMode.IMAGES and not pages:
             return self._failed(patient_uuid, document_id, doc_type, sha, ErrorCode.RENDER_FAILED, None, None)

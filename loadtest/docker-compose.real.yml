@@ -1,0 +1,12 @@
+# Override for one isolated real-model agent. Never used alone, and never against the live stack:
+#   docker compose -p agent-real -f loadtest/docker-compose.yml -f loadtest/docker-compose.real.yml up -d --build
+# The key comes from agent/.env through env_file; this file sets no secret. The data dir is a host path so
+# scripts/w2/measure.py can read traces.db. Loopback only, and a port the load stack does not use.
+services:
+  agent-load:
+    container_name: agent-real
+    environment:
+      LLM_PROVIDER: openrouter
+      W2_USE_STUB_VLM: "false"
+    ports: !override ["127.0.0.1:8402:8400"]
+    volumes: !override ["../tmp/agent-real-data:/srv/agent/data"]

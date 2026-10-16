@@ -57,6 +57,9 @@ def test_old_and_current_findings_for_one_test_are_told_apart():
     new = lab(9.4, flag="N", collected=date(2026, 9, 12), sid="Observation/new")
     texts = {f.source_ids[0]: f.text for f in rules.lab_flag_findings([new, old])}
     assert "collected 2024-11-11" in texts["Observation/old"] and "collected 2026-09-12" in texts["Observation/new"]
+    assert texts["Observation/old"].startswith("Historical result. ")
+    assert not texts["Observation/new"].startswith("Historical result. ")
+    assert "9.1" in texts["Observation/old"] and "9.4" in texts["Observation/new"]
 
 
 def test_matching_stored_flag_produces_no_finding():

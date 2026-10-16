@@ -1,6 +1,6 @@
 # W2_ARCHITECTURE.md: Clinical Co-Pilot, Week 2 (Multimodal Evidence Agent)
 
-Status: **C4 built (span ids, W2 events, three-state `/ready`, dashboard section, three alerts, OpenAPI spec and contract test, end-to-end PHI scan), on top of C3 (50-case golden set, eval gate, CI workflow), on top of C2 (supervisor, two workers, `POST /v1/w2/chat`) and C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C5 and do not exist yet. C4 detail: [docs/week2/checkpoints/C4-observability-and-contracts.md](docs/week2/checkpoints/C4-observability-and-contracts.md). C3 detail: [docs/week2/checkpoints/C3-eval-gate.md](docs/week2/checkpoints/C3-eval-gate.md). Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
+Status: **C5 built (click-to-source page endpoint, module `source.php` and overlay viewer, idempotent tunnel deploy script, measurement harness with a gated real tier, backup drill; the real-model run and the live apply await approval, see [docs/week2/checkpoints/C5-deploy-and-defend.md](docs/week2/checkpoints/C5-deploy-and-defend.md)). C4 built (span ids, W2 events, three-state `/ready`, dashboard section, three alerts, OpenAPI spec and contract test, end-to-end PHI scan), on top of C3 (50-case golden set, eval gate, CI workflow), on top of C2 (supervisor, two workers, `POST /v1/w2/chat`) and C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Nothing is still planned except what the C5 checkpoint lists as awaiting approval (the real-model measurement run and the live deploy). C4 detail: [docs/week2/checkpoints/C4-observability-and-contracts.md](docs/week2/checkpoints/C4-observability-and-contracts.md). C3 detail: [docs/week2/checkpoints/C3-eval-gate.md](docs/week2/checkpoints/C3-eval-gate.md). Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
 
 Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-baseline` is written plainly. Anything Week 2 will add is marked **(planned)** at first mention in each section and listed in the table below. Planned items are never runnable until a later checkpoint says so.
 
@@ -22,7 +22,7 @@ Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-basel
 | `.github/workflows/agent-evals.yml`, local pre-push hook | CI gate | C3 |
 | span and parent span IDs in `traces.db` (built) | additive schema change | C4 |
 | `/ready` status `degraded`, `docs/week2/openapi.yaml` (built) | readiness and API spec | C4 |
-| click-to-source viewer in `copilot.js` | UI | C5 |
+| click-to-source viewer (`copilot-source.js`), module `source.php`, `POST /v1/w2/documents/{id}/page` (built) | UI, module route, agent endpoint | C5 |
 
 ## 1. Week 1 baseline versus Week 2 behavior
 
@@ -48,7 +48,7 @@ Technical debt carried from Week 1 (documented here, resolved in the checkpoint 
 | Debt | Resolution |
 |---|---|
 | No CI runs `agent/` tests or `evals/` | C3 (done): `w2-eval-gate.yml` workflow plus `scripts/w2/pre-push` hook |
-| No deployed app (README says TBD) | C5 |
+| No deployed app (README says TBD) | C5 (built): `scripts/copilot/deploy_w2.sh` through the existing tunnel; applying it to the live stack awaits approval |
 | Spans have no span or parent ID | C4 (done): additive columns, see the migration note in section 11 |
 | `/ready` is binary (200 or 503) | C4 (done): `ready`, `degraded`, `not_ready` |
 | Older docs quote 56 evals and 321 passed; measured baseline is 60 and 522 | Fixed in new docs; historical Week 1 docs left as records |
@@ -108,6 +108,10 @@ Rules for both:
 
 **Module flow (C1).** `public/upload.php` and `src/UploadProxy.php` take user, pid, CSRF and ACL from the session (`patients/docs` write and `patients/lab`), check size and type by content, store or reuse the OpenEMR document (dedupe on `documents.hash`, SHA3-512, per patient), call `POST /v1/w2/documents`, write supported lab rows through `LabRecordWriter`, report the written record uuids to `POST /v1/w2/documents/{id}/links`, and ask `POST /v1/w2/retrieve` for guidelines using test names only.
 
+**Click-to-source (C5).** The viewer (`copilot-source.js`) calls the module's `public/source.php` (GET `document_id`, `page`). `src/SourceProxy.php` takes the patient only from the session, applies the viewing ACL (see the rule below), requires `documents.foreign_id` to equal the session pid and `deleted = 0`, then returns an image as is or, for a PDF, calls the signed `POST /v1/w2/documents/{id}/page` with the bytes. The agent checks the user's access to the patient, checks that the bytes hash to the stored `w2_documents.sha256` (so a page cannot be shown for a document other than the one extracted), renders one page through the same renderer chain and returns PNG. Nothing is stored; logs carry ids and counts only; responses are `Cache-Control: no-store`. The browser draws the box from `bbox` as percentages of the page image (`bboxToPercent`, a pure function). If the image fails to load, the page and quote remain as text. A fallback box that spans the whole page (`[0,0,1,1]`, meaning "somewhere on this page") draws no overlay.
+
+**Source-viewing ACL rule (intended).** Viewing a source page requires the session user to hold `patients/docs` (the permission OpenEMR asks for when a user opens a document in the chart), with the patient taken from the session, `documents.foreign_id` equal to that patient and `deleted = 0`. It deliberately does not require `patients/lab`, and does not require the `write`/`addonly` rights that upload needs: viewing is read-only, and a clinician who may open the document in the chart may see the same page here. Upload keeps its stricter rule (`patients/docs` write/addonly and `patients/lab`) because it files lab rows. The agent then independently re-checks the user's care-team access to the patient. `source.php` does not add OpenEMR's per-category document ACL; the module-level check is `patients/docs`, as for the rest of the module.
+
 `Handoff` and `WorkerResult` are defined in section 3.
 
 ## 3. Worker graph
@@ -142,7 +146,7 @@ Routing rules, in order, evaluated on every step:
 3. The question asks for guidance or evidence, or extracted lab values need support, and evidence is not yet retrieved: route to evidence-retriever.
 4. Otherwise the state is `ready` and Stage B writes and the W2 verifier checks document and guideline claims.
 5. A worker that fails or times out is recorded as such. The supervisor does not retry a failed extraction in a loop. It goes to a degraded answer that names the missing source, as Week 1 does for tool failures.
-6. Caps: at most 6 supervisor steps and a 40 s total deadline (initial values; to be tuned from measurement in C5). Hitting a cap produces a degraded answer with a note, never a hang.
+6. Caps: at most 6 supervisor steps and a 40 s total deadline (initial values; stub runs never approach them, and tuning from real-model data waits on the approved run in `docs/week2/PERFORMANCE.md`). Hitting a cap produces a degraded answer with a note, never a hang.
 
 Every handoff is one structured log event and one span, so the route can be rebuilt from the correlation ID alone.
 
@@ -311,7 +315,7 @@ One request is one trace (`traces.flow` is `chat`, `w2_chat`, `w2_ingest`, `w2_r
 
 Timeouts and retries are all in `agent/app/w2/limits.py`: VLM 30 s, reranker 10 s, embedder 20 s, each with at most one jittered retry (429, 5xx or a connect failure, never a read timeout); 30 s per supervisor worker; 40 s supervisor deadline.
 
-| SLO (initial, re-measured in C5) | Target | Checked by |
+| SLO (targets; stub-measured in C5, real-model run pending approval, see `docs/week2/PERFORMANCE.md`) | Target | Checked by |
 |---|---|---|
 | Ingestion p95 (upload to stored extraction) | under 30 s | dashboard Week 2 section |
 | Retrieval p95 (hybrid with rerank) | under 3 s | `w2_retrieval_latency_p95` alert |
@@ -333,7 +337,7 @@ What needs protecting and how it is recovered:
 | Guideline corpus, golden set, code | Git | Yes | The Git remote | Re-clone |
 | Secrets (`agent/.env`) | Deploy host | n/a | Held in the operator's secret store, never in Git | Reissue keys |
 
-Estimates (to be proven by a drill in C5; today they are design targets, not measured):
+Estimates, drilled in C5 on a temporary demo-size copy (`scripts/w2/backup_drill.py`; measured values and limits in `docs/week2/BACKUP.md`). Restore plus agent start took under 2 s; the derived-data RPO equals the backup interval (3 of 15 documents were lost in the drill); the real-model rebuild time is not measured. The table below holds the design targets:
 
 | Target | Estimate | Basis |
 |---|---|---|

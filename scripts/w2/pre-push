@@ -6,16 +6,18 @@ set -u
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-# Only when a push touches the agent or the evals; a docs-only push should not wait for the suite.
-# With no upstream to compare against (a new branch) it cannot tell, so it runs.
+# Only when a push touches a Week 2 surface. Module, UI and OpenAPI changes count, so they cannot
+# skip the local gate either. With no upstream to compare against (a new branch) it cannot tell, so it runs.
 if [ "${W2_GATE_FORCE:-}" != "1" ] && changed="$(git diff --name-only '@{upstream}..HEAD' 2>/dev/null)"; then
-  echo "$changed" | grep -qE '^(agent/|evals/|scripts/w2/|scripts/copilot/secret_scan.py)' \
-    || { echo "w2 gate: no agent or eval changes, skipping"; exit 0; }
+  echo "$changed" | grep -qE '^(agent/|evals/|scripts/w2/|scripts/copilot/|interface/modules/custom_modules/oe-module-copilot/|docs/week2/openapi.yaml|tests/playwright/specs/w2-|tests/js/copilot-|tests/Tests/Isolated/Modules/Copilot/|.github/workflows/w2-eval-gate.yml)' \
+    || { echo "w2 gate: no Week 2 changes, skipping"; exit 0; }
 fi
 
 PY="${PYTHON:-$ROOT/agent/.venv/bin/python}"
 [ -x "$PY" ] || PY="$(command -v python3)"
 
+echo "w2 gate: workflow scope"
+"$PY" scripts/w2/workflow_scope.py || { echo "w2 gate: workflow scope failed, push blocked"; exit 1; }
 echo "w2 gate: agent tests"
 (cd agent && "$PY" -m pytest tests -m "not live" -q) || { echo "w2 gate: tests failed, push blocked"; exit 1; }
 echo "w2 gate: golden set and eval gate"

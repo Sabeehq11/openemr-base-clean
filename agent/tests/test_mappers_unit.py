@@ -57,6 +57,18 @@ def test_allergy_unknown_code_falls_back_to_narrative():
     assert mappers.allergy(res).substance == "Penicillin"
 
 
+def test_allergy_narrative_html_entities_are_decoded_once():
+    res = {"resourceType": "AllergyIntolerance", "id": "a3",
+           "code": {"coding": [{"code": "unknown"}]},
+           "text": {"div": "<div xmlns='http://www.w3.org/1999/xhtml'>Penicillin & sulfa <rash></div>"}}
+    assert mappers.allergy(res).substance == "Penicillin & sulfa <rash>"
+
+
+def test_display_text_html_entities_are_decoded_once():
+    res = {"resourceType": "Condition", "id": "c1", "code": {"text": "Type 2 diabetes & CKD"}}
+    assert mappers.problem(res).title == "Type 2 diabetes & CKD"
+
+
 def test_allergy_reaction_is_none_when_absent():
     res = {"resourceType": "AllergyIntolerance", "id": "a2", "code": {"text": "Sulfa"}}
     a = mappers.allergy(res)

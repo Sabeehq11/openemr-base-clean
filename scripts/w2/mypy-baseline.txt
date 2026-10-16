@@ -1,0 +1,22 @@
+agent/app/logging_setup.py:49: error: No overload variant of "update" of "MutableMapping" matches argument type "object"  [call-overload]
+agent/app/logging_setup.py:49: note: Error code "call-overload" not covered by "type: ignore" comment
+agent/app/logging_setup.py:49: note: Possible overload variants:
+agent/app/logging_setup.py:49: note:     def update(self, SupportsKeysAndGetItem[str, object], /, **kwargs: object) -> None
+agent/app/logging_setup.py:49: note:     def update(self, Iterable[tuple[str, object]], /, **kwargs: object) -> None
+agent/app/logging_setup.py:49: note:     def update(self, **kwargs: object) -> None
+agent/app/metrics.py:179: error: Unsupported operand types for < ("float" and "None")  [operator]
+agent/app/metrics.py:179: note: Left operand is of type "Any | None"
+agent/app/mappers.py:113: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
+agent/app/conversation.py:56: error: Need type annotation for "_items" (hint: "_items: dict[<type>, <type>] = ...")  [var-annotated]
+agent/app/fhir_client.py:61: error: Assignment to variable "e" outside except: block  [misc]
+agent/app/fhir_client.py:62: error: Trying to read deleted variable "e"  [misc]
+agent/app/w2/facts.py:80: error: "object" has no attribute "support"  [attr-defined]
+agent/app/w2/facts.py:80: error: "object" has no attribute "citation"  [attr-defined]
+agent/app/w2/facts.py:85: error: "object" has no attribute "value"  [attr-defined]
+agent/app/w2/facts.py:85: error: "object" has no attribute "citation"  [attr-defined]
+agent/app/gateway.py:49: error: Need type annotation for "_seen" (hint: "_seen: dict[<type>, <type>] = ...")  [var-annotated]
+agent/app/w2/rag/__init__.py:20: error: Incompatible types in assignment (expression has type "OpenRouterReranker", variable has type "LexicalReranker")  [assignment]
+agent/app/w2/rag/__init__.py:24: error: Incompatible types in assignment (expression has type "HostedEmbedder", variable has type "HashedEmbedder")  [assignment]
+agent/app/chat.py:122: error: Item "None" of "LoadGauge | None" has no attribute "inflight"  [union-attr]
+agent/app/chat.py:127: error: Item "None" of "LoadGauge | None" has no attribute "inflight"  [union-attr]
+agent/app/w2/chat.py:117: error: Value of type "dict[str, Any] | None" is not indexable  [index]

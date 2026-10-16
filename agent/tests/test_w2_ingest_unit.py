@@ -31,8 +31,11 @@ async def test_repeat_upload_returns_existing_row_and_makes_no_second_vlm_call(t
     ing, store = make_ingestor(tmp_path, vlm)
     first = await ing.ingest(PATIENT, 7, LAB, fx("lab_report.pdf"))
     again = await ing.ingest(PATIENT, 99, LAB, fx("lab_report.pdf"))
-    assert again.duplicate and again.record.document_id == first.record.document_id == 7
-    assert len(vlm.calls) == 1 and store.get(PATIENT, 99) is None
+    # The extraction moves to the id this request owns. Citing the first id would point at a document OpenEMR does
+    # not have, so the page viewer could not highlight it.
+    assert again.duplicate and again.record.document_id == 99 and store.get(PATIENT, 7) is None
+    assert again.record.lab.rows[0].citation.source_id == "Document/99"
+    assert len(vlm.calls) == 1 and store.find_by_hash(PATIENT, first.record.sha256).document_id == 99
 
 
 async def test_same_file_for_another_patient_is_a_separate_record(tmp_path):

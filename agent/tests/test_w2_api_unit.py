@@ -81,7 +81,9 @@ def test_repeat_upload_is_a_duplicate_with_one_row(tmp_path):
     c, _, store = build(tmp_path)
     call(c, "POST", "/v1/w2/documents", upload_payload())
     r = call(c, "POST", "/v1/w2/documents", upload_payload(doc_id=8))
-    assert r.json()["duplicate"] is True and store.get(PATIENT, 8) is None
+    assert r.json()["duplicate"] is True and r.json()["document"]["document_id"] == 8
+    assert r.json()["document"]["lab"]["rows"][0]["citation"]["source_id"] == "Document/8"
+    assert store.get(PATIENT, 7) is None and store.get(PATIENT, 8) is not None
 
 
 def test_unsigned_and_wrong_secret_and_tampered_body_are_401(tmp_path):

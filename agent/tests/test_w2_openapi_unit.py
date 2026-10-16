@@ -12,7 +12,7 @@ from pydantic import SecretStr
 
 from app.config import Settings
 from app.main import create_app
-from app.w2.api import LinksBody, PreflightBody, RetrieveBody, UploadBody
+from app.w2.api import LinksBody, PageBody, PreflightBody, RetrieveBody, UploadBody
 from contracts.w2 import DocumentRecord
 from contracts.w2.documents import DocStatus, ErrorCode
 
@@ -80,7 +80,8 @@ def test_every_ref_resolves_and_every_operation_has_an_id():
 
 @pytest.mark.parametrize("path,model", [
     ("/v1/w2/preflight", PreflightBody), ("/v1/w2/documents", UploadBody),
-    ("/v1/w2/documents/{document_id}/links", LinksBody), ("/v1/w2/retrieve", RetrieveBody)])
+    ("/v1/w2/documents/{document_id}/links", LinksBody), ("/v1/w2/retrieve", RetrieveBody),
+    ("/v1/w2/documents/{document_id}/page", PageBody)])
 def test_request_schema_matches_the_pydantic_model(path, model):
     # guards: a required field added to the model but not the spec (or the reverse), or a loosened extra=forbid
     spec = request_schema(path)

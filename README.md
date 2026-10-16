@@ -29,7 +29,7 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 | [docs/week1/AI_COST_ANALYSIS.md](docs/week1/AI_COST_ANALYSIS.md) | Measured cost per request, 100 to 100K user projections, architecture changes per tier |
 | [agent/README.md](agent/README.md) | Co-Pilot setup guide, tests, endpoints, observability |
 
-**Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
+**Deployed app:** a Cloudflare quick tunnel to the local stack, started on demand (demo data only, no real PHI). The URL changes every time the tunnel starts, so no permanent link is kept here; the date and the exact steps of the last deployment are in [Deployed app (Week 2)](#deployed-app-week-2). A VPS path exists in [deploy/](deploy/) and is untested.
 
 ## Week 1 baseline and Week 2 (multimodal)
 
@@ -73,6 +73,20 @@ Agent settings live in `agent/.env` (copy from `agent/.env.example`; git-ignored
 | `W2_EMBED_MODEL` | `openai/text-embedding-3-small` | Week 2 | Hosted dense embeddings (cached); CI uses a hashed embedder |
 | `W2_USE_STUB_VLM` | `false` | Week 2 | Canned extraction, no network. Offline demos and CI only |
 | `W2_MAX_UPLOAD_BYTES`, `W2_MAX_PAGES` | 8 MiB, 5 | Week 2 | Upload caps, enforced before any model call |
+
+### Deployed app (Week 2)
+
+OpenEMR with the Co-Pilot dock is reached through a Cloudflare quick tunnel. Only OpenEMR is behind the tunnel; the agent stays on `127.0.0.1:8400` and the internal Docker network and is reached only by the module with the signed-request secret.
+
+```bash
+scripts/copilot/deploy_w2.sh                 # dry run: reports what is done and what would change, changes nothing
+scripts/copilot/deploy_w2.sh --apply         # does only the steps not already done; safe to run twice
+scripts/copilot/deploy_w2.sh --apply --enable-w2   # also turns W2_ENABLED on (edits that one key in agent/.env)
+```
+
+The script keeps existing patients, documents, OpenEMR settings, the OAuth client, the module config, the `agent_data` volume and `agent/.env`. It never runs `down`, `down -v`, `unharden` or `seed_demo_patients.py` (which deletes every `pid>=100` patient); `--seed` is a separate opt-in and refuses to run when any demo patient has a document or the agent holds an extraction. The tunnel start runs the security gate first.
+
+Known limits: a quick-tunnel URL changes on every start and the tunnel stops with the machine, so there is no permanent link. The deployed check is one Playwright spec: `BASE_URL=<tunnel url> COPILOT_FIXTURE_PASSWORD=... npx playwright test specs/w2-click-to-source.spec.ts` from `tests/playwright`. Last deployment record: see [docs/week2/checkpoints/C5-deploy-and-defend.md](docs/week2/checkpoints/C5-deploy-and-defend.md).
 
 The Week 2 variables are read only when `W2_ENABLED=true`; with it off the agent behaves exactly as at `w1-baseline`. C1 demo: `scripts/copilot/demo_c1.sh` (offline, stub model) and [docs/week2/checkpoints/C1-mvp-ingest-extract-retrieve.md](docs/week2/checkpoints/C1-mvp-ingest-extract-retrieve.md).
 

@@ -79,7 +79,16 @@ from MariaDB (the agent code is not involved). Never put the value in a tracked 
 | `POST /v1/tools/{name}` | the module / tests | same as chat |
 | `GET /dashboard`, `/dashboard.json` | operator | HTTP Basic, password `DASHBOARD_TOKEN`; 404 when unset. Shows in-flight and shed chats; the page refreshes every 15 s (`?refresh=N`, 0 = off) |
 
+| `POST /v1/w2/documents/{id}/page` | the module only (click-to-source) | same signature and care-team check; the bytes must hash to the stored extraction. Full list: [../docs/week2/openapi.yaml](../docs/week2/openapi.yaml) |
+
 The agent port is not published through the tunnel. Only OpenEMR is.
+
+## Deployed section (Week 2)
+
+`scripts/copilot/deploy_w2.sh` (dry run by default, `--apply` to act) brings the Week 2 stack up behind the existing
+tunnel. It is idempotent and non-destructive: it uses `docker compose up -d` only, keeps `agent/.env` and the
+`agent_data` volume, and checks that the agent is still bound to `127.0.0.1:8400` and not reachable through the tunnel
+URL. Seeding is a separate, refused-by-default option. See the top-level README, "Deployed app (Week 2)".
 
 ## Observability
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import binascii
 import functools
+import hashlib
 import json
 import logging
 from typing import Any
@@ -51,6 +52,11 @@ class UploadBody(_Body):
 
 class PreflightBody(_Body):
     doc_type: DocType
+    content_b64: str
+
+
+class PageBody(_Body):
+    page: int = Field(ge=1, le=50)
     content_b64: str
 
 
@@ -187,6 +193,41 @@ def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: I
         if record is None:
             return JSONResponse(NOT_FOUND, status_code=404)
         return JSONResponse({"document": json.loads(record.model_dump_json())})
+
+    @router.post("/documents/{document_id}/page")
+    async def page(document_id: int, request: Request) -> JSONResponse:
+        """One page of a stored document as an image, for the click-to-source viewer. The module fetches the bytes
+        from OpenEMR in the user's session; the agent keeps no document bytes. The bytes must hash to the stored
+        extraction's sha256, so a page can only be shown for the document that was actually extracted."""
+        ctx = await gateway.verify(request)
+        if len(ctx.body) > max_upload_bytes * 4 // 3 + 4096:
+            return JSONResponse({"error": "too_large", "message": "File is too large."}, status_code=413)
+        body: PageBody | None = parse(ctx, PageBody)
+        if body is None:
+            return JSONResponse(BAD_REQUEST, status_code=400)
+        if (denied := await deny_unless_allowed(ctx, body.patient_uuid)) is not None:
+            return denied
+        record = store.get(body.patient_uuid, document_id)
+        if record is None:
+            return JSONResponse(NOT_FOUND, status_code=404)
+        try:
+            data = base64.b64decode(body.content_b64, validate=True)
+        except (binascii.Error, ValueError):
+            return JSONResponse(BAD_REQUEST, status_code=400)
+        if hashlib.sha256(data).hexdigest() != record.sha256:
+            return JSONResponse(BAD_REQUEST, status_code=400)  # not the document that was extracted
+        try:
+            shown = ingestor.page_image(data, body.page)
+        except RejectedUpload:
+            return JSONResponse(BAD_REQUEST, status_code=400)
+        if shown is None:
+            return JSONResponse(NOT_FOUND, status_code=404)
+        image, mime, total = shown
+        log_event(logger, "w2_page", document_id=document_id, page=body.page, total_pages=total)
+        audit.record("w2_page", user=ctx.user_uuid, patient=body.patient_uuid, document_id=document_id,
+                     page=body.page, correlation_id=ctx.correlation_id)
+        return JSONResponse({"page": body.page, "total_pages": total, "mime": mime,
+                             "content_b64": base64.b64encode(image).decode("ascii")})
 
     @router.post("/documents/{document_id}/links")
     async def links(document_id: int, request: Request) -> JSONResponse:

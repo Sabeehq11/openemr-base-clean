@@ -1,6 +1,7 @@
 """Pure FHIR -> contract mappers. No network. Missing data stays None; nothing is inferred or normalised."""
 from __future__ import annotations
 
+import html
 from datetime import date, datetime
 
 from contracts import Allergy, Encounter, LabResult, Medication, PatientSummary, Problem
@@ -27,10 +28,18 @@ def _first_coding(cc: object) -> dict:
     return {}
 
 
+def _plain(value: object) -> str | None:
+    """FHIR narrative and display strings can carry HTML entities. Decode them once at this boundary."""
+    if not isinstance(value, str):
+        return None
+    text = html.unescape(value).strip()
+    return text or None
+
+
 def _text(cc: object) -> str | None:
     if not isinstance(cc, dict):
         return None
-    return cc.get("text") or _first_coding(cc).get("display") or None
+    return _plain(cc.get("text")) or _plain(_first_coding(cc).get("display"))
 
 
 def age_years(birth: date | None, today: date) -> int | None:
@@ -74,7 +83,7 @@ def allergy(res: dict) -> Allergy:
     substance = None if coding.get("code") == "unknown" and not (code or {}).get("text") else _text(code)
     if substance is None:  # OpenEMR puts the title in the narrative when the coded substance is unknown
         div = (res.get("text") or {}).get("div", "")
-        substance = div.replace("<div xmlns='http://www.w3.org/1999/xhtml'>", "").replace("</div>", "").strip() or None
+        substance = _plain(div.replace("<div xmlns='http://www.w3.org/1999/xhtml'>", "").replace("</div>", ""))
     reactions = res.get("reaction") or []
     reaction = None
     if reactions and isinstance(reactions[0], dict):

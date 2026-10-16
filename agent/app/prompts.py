@@ -1,6 +1,7 @@
 """Prompt text and the model-facing view of tool results (PHI minimised)."""
 from __future__ import annotations
 
+import html
 import json
 import re
 
@@ -81,7 +82,9 @@ def restore_patient_reference(answer: VerifiedAnswer, envelopes: list[ToolEnvelo
             if name:
                 return name
             return "The patient" if text[:m.start()].strip() == "" else "the patient"
-        return _PLACEHOLDER_RE.sub(sub, text)
+        # Names and narratives can arrive entity-encoded. Decode once here, after verification, so the dock's
+        # textContent insertion shows the character rather than the entity. Clinical wording is otherwise unchanged.
+        return html.unescape(_PLACEHOLDER_RE.sub(sub, text))
 
     return answer.model_copy(update={
         "claims": [VerifiedClaim(**{**c.model_dump(), "text": fix(c.text)}) for c in answer.claims],

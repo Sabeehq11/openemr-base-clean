@@ -1,0 +1,31 @@
+meta {
+  name: One page of the uploaded document as an image (signed)
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{agent}}/v1/w2/documents/9001/page
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "page": 1,
+    "content_b64": "{{lab_pdf_b64}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.page: eq 1
+  res.body.mime: eq image/png
+}
+
+docs {
+  Run 01-upload-lab-pdf first (document 9001). The bytes must hash to the stored extraction's sha256, so this
+  only works with the same file that was uploaded (lab_pdf_b64); any other bytes get 400. Nothing is stored by this call.
+  The module's source.php is the browser-facing route; it calls this endpoint for PDFs after its own ownership checks.
+}

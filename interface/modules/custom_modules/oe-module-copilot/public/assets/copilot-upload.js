@@ -1,4 +1,11 @@
 /* Co-Pilot document upload control. Loaded after copilot.js. Every string from the server goes in with textContent. */
+function citationText(c) {
+    if (!c) { return 'no citation'; }
+    // The box stays on the citation for the page highlight. Normal text shows only the page and quote.
+    return 'p' + c.page_or_section + ': "' + c.quote_or_value + '"';
+}
+if (typeof module === 'object' && module.exports) { module.exports = { citationText: citationText }; }
+
 (function () {
     'use strict';
     var root = document.getElementById('copilot-root');
@@ -22,7 +29,7 @@
     function el(tag, cls, text) {
         var e = document.createElement(tag);
         if (cls) { e.className = cls; }
-        if (text !== undefined) { e.textContent = text; }
+        if (text !== undefined) { e.textContent = window.CopilotDisplay ? window.CopilotDisplay(text) : text; }
         return e;
     }
 
@@ -50,27 +57,33 @@
         return m;
     }
 
-    function citationText(c) {
-        if (!c) { return 'no citation'; }
-        var where = 'p' + c.page_or_section;
-        if (c.bbox) { where += ' [' + c.bbox.map(function (n) { return n.toFixed(2); }).join(', ') + ']'; }
-        return where + ': "' + c.quote_or_value + '"';
+    // The citation as text, plus a "View source" toggle when the cited page can be shown. The viewer opens in `wrap`,
+    // under the row. The text stays either way, so a page that fails to load still says where the value came from.
+    function withSource(row, wrap, citation) {
+        row.appendChild(el('span', 'copilot-note', citationText(citation)));
+        if (citation && citation.source_type === 'extracted' && window.CopilotSource) {
+            row.appendChild(window.CopilotSource.button(root.dataset.sourceEndpoint, citation, wrap));
+        }
     }
 
     function labRow(r) {
+        var wrap = el('div', 'copilot-claim-wrap');
         var row = el('p', 'copilot-claim copilot-' + (r.support === 'supported' ? 'fact' : 'unsupported'));
         var flag = r.abnormal_flag && r.abnormal_flag !== 'unknown' && r.abnormal_flag !== 'normal' ? ' (' + r.abnormal_flag + ')' : '';
         row.appendChild(el('span', 'copilot-claim-text',
             r.test_name + ': ' + r.value + ' ' + (r.unit || '') + flag + (r.support === 'supported' ? '' : ' - not verified, not saved')));
-        row.appendChild(el('span', 'copilot-note', citationText(r.citation)));
-        return row;
+        withSource(row, wrap, r.citation);
+        wrap.insertBefore(row, wrap.firstChild);
+        return wrap;
     }
 
     function intakeLine(label, f) {
+        var wrap = el('div', 'copilot-claim-wrap');
         var row = el('p', 'copilot-claim copilot-pending');
         row.appendChild(el('span', 'copilot-claim-text', label + ': ' + f.value + ' (for review, not saved to chart)'));
-        row.appendChild(el('span', 'copilot-note', citationText(f.citation)));
-        return row;
+        withSource(row, wrap, f.citation);
+        wrap.insertBefore(row, wrap.firstChild);
+        return wrap;
     }
 
     function render(data) {

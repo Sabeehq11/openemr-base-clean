@@ -50,7 +50,8 @@ final class Bootstrap
         $csrf = CsrfUtils::collectCsrfToken($session);
         ?>
         <link rel="stylesheet" href="<?php echo attr($this->assetUrl($web, 'copilot.css')); ?>">
-        <div id="copilot-root" data-endpoint="<?php echo attr($web); ?>chat.php" data-upload-endpoint="<?php echo attr($web); ?>upload.php" data-csrf="<?php echo attr($csrf); ?>" hidden></div>
+        <div id="copilot-root" data-endpoint="<?php echo attr($web); ?>chat.php" data-upload-endpoint="<?php echo attr($web); ?>upload.php" data-source-endpoint="<?php echo attr($web); ?>source.php" data-csrf="<?php echo attr($csrf); ?>" hidden></div>
+        <script src="<?php echo attr($this->assetUrl($web, 'copilot-source.js')); ?>"></script>
         <script src="<?php echo attr($this->assetUrl($web, 'copilot.js')); ?>"></script>
         <script src="<?php echo attr($this->assetUrl($web, 'copilot-upload.js')); ?>"></script>
         <?php

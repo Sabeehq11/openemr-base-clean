@@ -134,6 +134,40 @@ paths:
         "403": {$ref: "#/components/responses/Forbidden"}
         "404": {$ref: "#/components/responses/NotFound"}
         "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/documents/{document_id}/page:
+    post:
+      tags: [documents]
+      summary: Render one page of a stored document for the click-to-source viewer.
+      description: |
+        The module sends the document bytes it read from OpenEMR; the agent stores none. The bytes must hash to the
+        extraction's sha256, otherwise the request is refused (400), so a page is only ever shown for the document
+        that was extracted. 404 means no such document or no such page.
+      operationId: w2GetPage
+      parameters:
+        - {name: document_id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {$ref: "#/components/parameters/Timestamp"}
+        - {$ref: "#/components/parameters/Nonce"}
+        - {$ref: "#/components/parameters/Signature"}
+        - {$ref: "#/components/parameters/User"}
+        - {$ref: "#/components/parameters/Token"}
+        - {$ref: "#/components/parameters/CorrelationId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PageRequest"}
+      responses:
+        "200":
+          description: The page image.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageResponse"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/Rejected"}
+        "429": {$ref: "#/components/responses/RateLimited"}
   /v1/w2/documents/{document_id}/links:
     post:
       tags: [documents]
@@ -323,6 +357,22 @@ components:
         renderers_available:
           type: array
           items: {type: string}
+    PageRequest:
+      type: object
+      additionalProperties: false
+      required: [patient_uuid, page, content_b64]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        page: {type: integer, minimum: 1, maximum: 50, description: 1-based page number.}
+        content_b64: {type: string, description: The stored file, base64 encoded.}
+    PageResponse:
+      type: object
+      required: [page, total_pages, mime, content_b64]
+      properties:
+        page: {type: integer, minimum: 1}
+        total_pages: {type: integer, minimum: 1}
+        mime: {type: string, enum: [image/png, image/jpeg]}
+        content_b64: {type: string, description: The page image, base64 encoded.}
     LinksRequest:
       type: object
       additionalProperties: false

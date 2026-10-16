@@ -80,6 +80,31 @@ class W2Store:
                             (patient_uuid, sha256)).fetchone()
         return self.get(patient_uuid, row[0]) if row else None
 
+    def rebind(self, patient_uuid: str, old_id: int, new_id: int) -> DocumentRecord | None:
+        """Move one patient's extracted document to the id OpenEMR assigned this upload. Facts and citations move with
+        it; the hash stays, so a later upload of the same bytes still finds this extraction. No model call."""
+        if old_id == new_id:
+            return self.get(patient_uuid, old_id)
+        with self._lock, self._conn() as c:
+            owner = c.execute("SELECT sha256 FROM w2_documents WHERE patient_uuid=? AND document_id=?",
+                              (patient_uuid, old_id)).fetchone()
+            if owner is None:
+                return None
+            if c.execute("SELECT 1 FROM w2_documents WHERE patient_uuid=? AND document_id=?",
+                         (patient_uuid, new_id)).fetchone():
+                return None  # the caller asked for an id this patient already has; do not merge two documents
+            c.execute("UPDATE w2_documents SET document_id=? WHERE patient_uuid=? AND document_id=?",
+                      (new_id, patient_uuid, old_id))
+            c.execute("UPDATE w2_facts SET document_id=? WHERE patient_uuid=? AND document_id=?",
+                      (new_id, patient_uuid, old_id))
+            c.execute("UPDATE w2_citations SET source_id=? WHERE patient_uuid=? AND source_id=?",
+                      (f"Document/{new_id}", patient_uuid, f"Document/{old_id}"))
+            for fact_id, payload in c.execute("SELECT fact_id, payload FROM w2_facts WHERE patient_uuid=? AND document_id=?",
+                                              (patient_uuid, new_id)):
+                c.execute("UPDATE w2_facts SET payload=? WHERE fact_id=?",
+                          (_retarget_payload(payload, old_id, new_id), fact_id))
+        return self.get(patient_uuid, new_id)
+
     def list_document_ids(self, patient_uuid: str, limit: int = 5) -> list[int]:
         """Newest documents first, for one patient only. Read-only; used by the intake-extractor worker."""
         with self._conn() as c:
@@ -173,6 +198,25 @@ class W2Store:
                   "(SELECT fact_id FROM w2_facts WHERE patient_uuid=? AND document_id=?)",
                   (patient_uuid, patient_uuid, document_id))
         c.execute("DELETE FROM w2_facts WHERE patient_uuid=? AND document_id=?", (patient_uuid, document_id))
+
+
+def _retarget_payload(payload: str, old_id: int, new_id: int) -> str:
+    """Citation source ids are stored inside the fact payload. Point them at the document id this upload owns."""
+    old, new = f"Document/{old_id}", f"Document/{new_id}"
+    data = json.loads(payload)
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("source_id") == old:
+                node["source_id"] = new
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(data)
+    return json.dumps(data)
 
 
 def _intake_kwargs(facts: list[tuple[str, str, str | None]]) -> dict:
