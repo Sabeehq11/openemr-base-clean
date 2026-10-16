@@ -1,0 +1,34 @@
+meta {
+  name: Week 2 dashboard (operator, needs W2_ENABLED)
+  type: http
+  seq: 24
+}
+
+get {
+  url: {{agent}}/dashboard.json?window=3600
+  body: none
+  auth: basic
+}
+
+auth:basic {
+  username: ops
+  password: {{dashboard_token}}
+}
+
+assert {
+  res.status: eq 200
+  res.body.w2.ingest_slo_ms: eq 30000
+  res.body.w2.retrieval_slo_ms: eq 3000
+}
+
+tests {
+  const names = res.getBody().alerts.map(a => a.name);
+  test("the three Week 2 alerts are listed", function () {
+    expect(names).to.include.members(["w2_extraction_failure_rate", "w2_retrieval_latency_p95", "w2_eval_regression"]);
+  });
+}
+
+docs {
+  Week 2 section of the operator view: ingestion and retrieval counts, p95 against the SLOs, extraction field pass
+  rate, routing decisions, per-worker p95 and the latest eval gate result. Counts and timings only.
+}

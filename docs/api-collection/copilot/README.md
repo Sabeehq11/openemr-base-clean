@@ -68,3 +68,9 @@ The per-user rate limit on the demo agent is 60 requests per minute, and each no
 upload for another physician's patient (403). `w2-upload-unsigned.bru` at the top level must get 401. `w2/06-chat-signed.bru` calls `POST /v1/w2/chat` (the C2 supervisor path; answer groups chart, document and guideline claims separately) and `w2-chat-unsigned.bru` must get 401. Set `lab_pdf_b64` to
 `base64 -i agent/tests/fixtures/w2/lab_report.pdf | tr -d '\n'`. For an offline demo run the agent with
 `W2_ENABLED=true W2_USE_STUB_VLM=true`. The real OpenEMR lab rows are written by the module (`upload.php`), not by these requests.
+
+C4 adds two top-level requests that also need `W2_ENABLED=true`: `w2-ready.bru` (no auth; `/ready` reports
+`w2_checks`; a Week 2 problem alone gives `degraded` with a 200, never a 503) and `w2-dashboard.bru` (operator Basic auth
+with `dashboard_token`, as `dashboard.bru`; `dashboard.json` has a `w2` section and the three Week 2 alerts, with
+`w2_eval_regression` reporting no samples outside a source checkout). The endpoint contract is `docs/week2/openapi.yaml`, checked against the
+app by `agent/tests/test_w2_openapi_unit.py`.

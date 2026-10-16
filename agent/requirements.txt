@@ -9,3 +9,4 @@ pytest-asyncio==0.25.0
 pymupdf==1.28.2
 pypdfium2==5.14.0
 pillow==12.3.0
+PyYAML==6.0.3  # reads docs/week2/openapi.yaml in the contract test; already installed by uvicorn[standard]
