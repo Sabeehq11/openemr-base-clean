@@ -1,6 +1,6 @@
 # W2_ARCHITECTURE.md: Clinical Co-Pilot, Week 2 (Multimodal Evidence Agent)
 
-Status: **C3 built (50-case golden set, five rubrics, eval gate, CI workflow), on top of C2 (supervisor, two workers, `POST /v1/w2/chat`) and C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C4 onward and do not exist yet. C3 detail: [docs/week2/checkpoints/C3-eval-gate.md](docs/week2/checkpoints/C3-eval-gate.md). Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
+Status: **C4 built (span ids, W2 events, three-state `/ready`, dashboard section, three alerts, OpenAPI spec and contract test, end-to-end PHI scan), on top of C3 (50-case golden set, eval gate, CI workflow), on top of C2 (supervisor, two workers, `POST /v1/w2/chat`) and C1 (ingest, extract, retrieve), behind `W2_ENABLED`.** Items marked **(planned)** belong to C5 and do not exist yet. C4 detail: [docs/week2/checkpoints/C4-observability-and-contracts.md](docs/week2/checkpoints/C4-observability-and-contracts.md). C3 detail: [docs/week2/checkpoints/C3-eval-gate.md](docs/week2/checkpoints/C3-eval-gate.md). Items built in C1 and C2 are written plainly. C2 detail: [docs/week2/checkpoints/C2-supervisor-and-workers.md](docs/week2/checkpoints/C2-supervisor-and-workers.md). Week 1 behavior is documented in [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) and is unchanged. The measured Week 1 reference is [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (tag `w1-baseline`). The roadmap is [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md).
 
 Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-baseline` is written plainly. Anything Week 2 will add is marked **(planned)** at first mention in each section and listed in the table below. Planned items are never runnable until a later checkpoint says so.
 
@@ -20,8 +20,8 @@ Labeling rule: a path, endpoint, flag, table or env var that exists at `w1-basel
 | `w2_chat` module config key, default off | routes the module to `/v1/w2/chat` (built) | C2 |
 | `evals/w2/`, `evals/baseline.json`, `evals/gate.py` | eval suite and gate | C3 |
 | `.github/workflows/agent-evals.yml`, local pre-push hook | CI gate | C3 |
-| span and parent span IDs in `traces.db` | additive schema change | C4 |
-| `/ready` status `degraded`, `docs/week2/openapi.yaml` | readiness and API spec | C4 |
+| span and parent span IDs in `traces.db` (built) | additive schema change | C4 |
+| `/ready` status `degraded`, `docs/week2/openapi.yaml` (built) | readiness and API spec | C4 |
 | click-to-source viewer in `copilot.js` | UI | C5 |
 
 ## 1. Week 1 baseline versus Week 2 behavior
@@ -41,7 +41,7 @@ Isolation rules:
 2. Week 1 files change only at named seams: tracing (`agent/app/tracing.py`), metrics (`agent/app/metrics.py`), readiness in `agent/app/main.py`, the verifier's citation types, and the eval registry (`evals/registry.py`). Each change is additive and gets a migration note in section 6.
 3. `W2_ENABLED` defaults to off. With it off, the agent behaves exactly as at `w1-baseline`.
 4. The supervisor calls `AgentLoop` as the chart-facts capability and does not edit it.
-5. Week 1 tests (522 passed, 30 skipped offline) and stub evals (67/67) and the 50-case golden gate must pass with `W2_ENABLED` both 0 and 1.
+5. Week 1 tests and stub evals and the 50-case golden gate must pass with `W2_ENABLED` both 0 and 1. The 522 passed, 30 skipped figure is the `w1-baseline` count, taken before any Week 2 tests existed; it is the reference for Week 1 only. The current whole-suite count includes the Week 2 tests (828 passed, 1 skipped, 30 live tests deselected at C4 close, see the C4 checkpoint), and the stub evals are 67/67.
 
 Technical debt carried from Week 1 (documented here, resolved in the checkpoint named):
 
@@ -49,8 +49,8 @@ Technical debt carried from Week 1 (documented here, resolved in the checkpoint 
 |---|---|
 | No CI runs `agent/` tests or `evals/` | C3 (done): `w2-eval-gate.yml` workflow plus `scripts/w2/pre-push` hook |
 | No deployed app (README says TBD) | C5 |
-| Spans have no span or parent ID | C4: additive columns |
-| `/ready` is binary (200 or 503) | C4: `ready`, `degraded`, `not_ready` |
+| Spans have no span or parent ID | C4 (done): additive columns, see the migration note in section 11 |
+| `/ready` is binary (200 or 503) | C4 (done): `ready`, `degraded`, `not_ready` |
 | Older docs quote 56 evals and 321 passed; measured baseline is 60 and 522 | Fixed in new docs; historical Week 1 docs left as records |
 | One uvicorn worker, because nonce cache, rate limiter and conversation store are in process memory | Accepted. Week 2 state goes in SQLite, not process memory |
 | Care-team edits are an unaudited access-control change (`agent/AUTHZ_PROOF.md`) | Carried forward, out of scope |
@@ -262,11 +262,13 @@ Authorization:
 | Unit: extractor parsing | Fixture VLM outputs (valid, truncated, wrong types, injected text) | Partial records saved; instructions followed | PR gate |
 | Unit: rules and verifier additions | Flag recompute, quote contains value, new citation types, Week 1 behavior unchanged | A wrong flag or an unverified claim reaching the UI | PR gate |
 | Unit: retrieval | BM25, fusion order, rerank cutoff, empty result, offline stubs | Missing or wrong evidence; stale index | PR gate |
-| Unit: supervisor **(planned)** | Routing table, step and deadline caps, worker failure paths | Wrong route; loops; hangs | PR gate |
-| Contract: supervisor to worker **(planned)** | `Handoff` and `WorkerResult` shapes, one event per handoff | Silent handoff changes; untraceable routes | PR gate |
+| Unit: supervisor | Routing table, step and deadline caps, worker failure paths | Wrong route; loops; hangs | PR gate |
+| Contract: supervisor to worker | `Handoff` and `WorkerResult` shapes, one event per handoff | Silent handoff changes; untraceable routes | PR gate |
+| Contract: OpenAPI | `docs/week2/openapi.yaml` against the FastAPI app: route set, required fields, status codes (Week 2 routes, `/health`, `/ready`) | Spec and code diverging | PR gate |
+| Unit: tracing and `/ready` | Span parent chain, idempotent migration, embedder retry, ready/degraded/not_ready, alert thresholds and minimum samples | Orphaned spans; a W2 outage returning 503; false pages | PR gate |
 | Integration (stub tier) | Upload to extract to store to answer, with a fake VLM and fake OpenEMR | A broken seam between components | PR gate |
 | Golden evals (50 cases) | The five boolean rubrics over the categories in section 5, plus zero tolerance on critical cases | Regression in quality or safety | PR gate (blocking, `w2-eval-gate.yml`; required status is a branch-protection setting) |
-| Week 1 regression | The 522 offline tests and 60 evals at `w1-baseline` | Week 2 breaking Week 1 | PR gate, `W2_ENABLED` 0 and 1 |
+| Week 1 regression | The Week 1 tests and 60 evals at `w1-baseline` (522 offline tests then; the suite is larger now that Week 2 tests are in it) | Week 2 breaking Week 1 | PR gate, `W2_ENABLED` 0 and 1 |
 | Authorization and isolation | Another patient's document id returns nothing; no-token request refused | Cross-patient leakage | PR gate |
 | PHI scan | `no_phi_in_logs` over captured logs, a static scan of every `app/w2` logging call, a data scan of the golden set and fixtures | PHI in logs | PR gate (logs and code in C3; traces and dashboards in C4) |
 | Live tier, on demand | Real VLM and reranker on synthetic documents | Provider drift; prompt regressions | Manual, spend-capped |
@@ -277,22 +279,46 @@ Rule: a test is added with the code it guards, and its name states the failure m
 
 ## 9. Failure modes and recovery
 
-Each row says how to spot the failure and what to do. Log fields use the Week 1 format (JSON lines with `correlation_id`). Event names are **(planned)** until C4.
+Each row says how to spot the failure and what to do. Log fields use the Week 1 format (JSON lines with `correlation_id`). Event names are listed under the table below; every line carries the `correlation_id`.
 
 | Failure | How to spot it | Behavior | Recovery |
 |---|---|---|---|
-| **Ingestion failure** (bad file, size or type rejected, OpenEMR write refused or timed out) | `w2.ingest` event with `status=rejected` or `failed` and an `error_code`; upload error count on the dashboard | Clear error to the user; nothing stored on rejection; a failed OpenEMR write leaves no registry row | Fix the file or retry. For a write failure, check OpenEMR health and the agent's token scope, then retry; uploads are idempotent |
-| **VLM unavailable or slow** | `w2.extract` with `status=timeout`; extraction latency alert | One retry, then the document is kept with `extraction=failed` | Retry extraction on demand once the provider recovers; no re-upload needed |
-| **Schema violation** (model output fails the strict schema) | `w2.extract` with `status=schema_invalid`; extraction pass rate falls | Nothing is persisted from that output; the user sees "could not read this document" | Inspect the failing fixture in a test environment (never log the content); fix the prompt or schema; add a regression case |
-| **Unsupported field** (no quote or region) | Count of `unsupported` fields per document | Field shown as unsupported, excluded from answers | Reviewer checks the source by hand |
-| **Empty retrieval** (no passage passes the minimum score) | `w2.retrieve` with `status=empty`; empty-rate metric | The answer says no guideline evidence was found; no memory-based fill | Check the query terms and corpus coverage; add a passage if the topic belongs in scope |
-| **Reranker unreachable** | `w2.retrieve` with `rerank_skipped`; `/ready` shows `degraded` | Fused order is used, flagged | Restore the provider or key; no data loss |
-| **Routing error** (wrong or looping route, cap hit) | Handoff events show the sequence; `w2.supervisor` with `status=cap_hit` | Degraded answer naming the missing source; never a hang | Reproduce from the correlation ID; fix the routing table; add a routing eval case |
+| **Ingestion failure** (bad file, size or type rejected, OpenEMR write refused or timed out) | `w2_ingest_complete` (`status`, `error_code`) and `w2_upload_rejected` in the audit chain; dashboard extraction failure rate and the `w2_extraction_failure_rate` alert | Clear error to the user; nothing stored on rejection; a failed OpenEMR write leaves no registry row | Fix the file or retry. For a write failure, check OpenEMR health and the agent's token scope, then retry; uploads are idempotent |
+| **VLM unavailable or slow** | `w2_extract` with `status=vlm_error`; `w2_extraction_failure_rate` alert | One retry, then the document is kept with `extraction=failed` | Retry extraction on demand once the provider recovers; no re-upload needed |
+| **Schema violation** (model output fails the strict schema) | `w2_extract` with `status=schema_invalid`; dashboard field pass rate falls | Nothing is persisted from that output; the user sees "could not read this document" | Inspect the failing fixture in a test environment (never log the content); fix the prompt or schema; add a regression case |
+| **Unsupported field** (no quote or region) | `fields_supported` against `fields_total` on `w2_extract` and the `ingest` span | Field shown as unsupported, excluded from answers | Reviewer checks the source by hand |
+| **Empty retrieval** (no passage passes the minimum score) | `w2_retrieve` with `status=miss`; dashboard retrieval hit rate | The answer says no guideline evidence was found; no memory-based fill | Check the query terms and corpus coverage; add a passage if the topic belongs in scope |
+| **Reranker unreachable** | `w2_rerank status=skipped`; `/ready` shows `degraded` (`w2_checks.reranker`) after a failed call; `w2_retrieval_latency_p95` alert | Fused order is used, flagged | Restore the provider or key; no data loss |
+| **Routing error** (wrong or looping route, cap hit) | `w2_handoff` events show the sequence (each carries its `span_id`); the `supervisor` span records `route_*` counts and `steps` | Degraded answer naming the missing source; never a hang | Reproduce from the correlation ID; fix the routing table; add a routing eval case |
 | **Citation does not resolve or quote mismatch** | Verifier rejection counter | Claim withheld, as in Week 1 | Treat as a defect in the worker that produced it |
-| **Agent database lost or corrupt** | `/ready` fails the storage check | Week 2 requests return a clear unavailable error; Week 1 chat continues | Restore from backup (section 10) or rebuild by re-extracting stored documents |
+| **Agent database lost or corrupt** | `/ready` is `degraded` with `w2_checks.document_store` failed | Week 2 requests return a clear unavailable error; Week 1 chat continues | Restore from backup (section 10) or rebuild by re-extracting stored documents |
 | **PHI found in a log** | PHI scan in CI, or the runtime redactor counter | Build fails; at runtime the value is masked | Remove the source of the leak, rotate logs, add a scanner case |
 
-Operator entry points: `agent/RUNBOOK.md` for Week 1 incidents; Week 2 entries are added there in C4.
+Operator entry points: `agent/RUNBOOK.md`, which has an entry for each Week 2 alert (`w2_extraction_failure_rate`, `w2_retrieval_latency_p95`, `w2_eval_regression`) and for a degraded `/ready`.
+
+### Events, spans and SLOs (C4)
+
+| Event (log line) | Fields (codes and counts only) |
+|---|---|
+| `w2_ingest_start` | `doc_type`, `size_bytes` |
+| `w2_ingest_complete` | `status`, `duplicate`, `error_code`, `doc_type` |
+| `w2_extract` | `status`, `document_id`, `facts`, `fields_supported`, `fields_total`, `confidence_avg` |
+| `w2_retrieve` | `status` (`hit` or `miss`), `hits`, `candidates`, `rerank_skipped`, `reranker` |
+| `w2_handoff`, `w2_worker_result` | route, `step`, `span_id`; worker, `status`, `latency_ms` |
+| `span` (every step) | `span_kind`, `span_name`, `ms`, `status`, `span_id`, `parent_span_id`, plus counts |
+
+One request is one trace (`traces.flow` is `chat`, `w2_chat`, `w2_ingest`, `w2_retrieve` or `w2_preflight`). In a chat, `w2/supervisor` is the root span and `intake_extractor`, `chart_facts` and `evidence_retriever` are its children. `retrieve` sits under `evidence_retriever` with `embed` and `rerank` below it. In an upload, `vlm_extract` sits under `ingest`. Rebuild a trace with `SELECT * FROM spans WHERE trace_id IN (SELECT id FROM traces WHERE correlation_id = ?)` and follow `parent_span_id`.
+
+Timeouts and retries are all in `agent/app/w2/limits.py`: VLM 30 s, reranker 10 s, embedder 20 s, each with at most one jittered retry (429, 5xx or a connect failure, never a read timeout); 30 s per supervisor worker; 40 s supervisor deadline.
+
+| SLO (initial, re-measured in C5) | Target | Checked by |
+|---|---|---|
+| Ingestion p95 (upload to stored extraction) | under 30 s | dashboard Week 2 section |
+| Retrieval p95 (hybrid with rerank) | under 3 s | `w2_retrieval_latency_p95` alert |
+| Extraction failure rate | under 20 % over 10 min | `w2_extraction_failure_rate` alert |
+| Golden-set rubric drop | at most 5 points below baseline | the CI gate (enforcing); the `w2_eval_regression` alert reports it on a source checkout, and shows `n/a (CI)` in the deployed image |
+
+`/ready` returns `ready`, `degraded` (200, only Week 2 impaired) or `not_ready` (503, a Week 1 dependency down). Its Week 2 checks (`document_store`, `vector_index`, `reranker`) read configuration and the last real call and never contact a provider.
 
 ## 10. Backup and recovery
 
@@ -332,3 +358,9 @@ Known gap (Week 1 debt, carried): OpenEMR has no retention or purge settings (au
 | 7 | **Judge model for wording rubrics, if any** | Deterministic only, or a fixed model judge at temperature 0 | Deterministic wherever possible; judge only for wording, never in the PR gate | C3 |
 
 Anything above marked "settled" may be reopened only with a written reason in this file.
+
+### Migration note: trace schema (C4)
+
+`TraceStore` adds four nullable columns on startup, each guarded by `PRAGMA table_info` so a second start does nothing: `traces.flow`, `spans.span_id`, `spans.parent_span_id` and `spans.attrs` (a JSON object of counts, never text). Rows written before C4 keep `NULL` in all four, and every Week 1 query is unchanged. There is no down migration; the columns can stay unused. Tests: `agent/tests/test_w2_tracing_unit.py`.
+
+C4 also holds the `httpx`, `httpcore` and `uvicorn.access` loggers at WARNING, and the agent image starts uvicorn with `--no-access-log`. The PHI scan found that httpx's INFO request lines carried `?patient=<uuid>` from the FHIR calls, and uvicorn's access log does the same for `GET /v1/w2/documents/{id}?patient_uuid=`. This touches Week 1 logging and removes only those lines. Week 1 dashboard numbers and alerts now count chat traces only (`flow` NULL, `chat` or `w2_chat`).

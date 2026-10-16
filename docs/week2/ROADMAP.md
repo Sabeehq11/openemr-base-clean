@@ -59,7 +59,7 @@ Dates are from the PRD: MVP Tuesday 11:59 PM, Early Submission Thursday 11:59 PM
 | C1 | MVP: ingest, extract, retrieve | done (see [checkpoints/C1](checkpoints/C1-mvp-ingest-extract-retrieve.md)) |
 | C2 | Supervisor and two workers | done (see [checkpoints/C2](checkpoints/C2-supervisor-and-workers.md)) |
 | C3 | Eval gate (the PRD hard gate) | done (see [checkpoints/C3](checkpoints/C3-eval-gate.md)) |
-| C4 | Observability, contracts, ops | not started |
+| C4 | Observability, contracts, ops | done (see [checkpoints/C4](checkpoints/C4-observability-and-contracts.md)) |
 | C5 | Deploy, performance, defend | not started |
 
 ### C0. Baseline and architecture defense
