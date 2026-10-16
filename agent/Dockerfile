@@ -10,4 +10,4 @@ COPY . .
 RUN useradd -r -u 10001 agent && mkdir -p /srv/agent/data && chown -R agent /srv/agent/data
 USER agent
 EXPOSE 8400
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8400"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8400", "--no-access-log"]

@@ -52,12 +52,22 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str)
 
 
+def quiet_client_loggers() -> None:
+    """A patient identifier does not belong in an operational log. httpx logs every outbound request at INFO, URL
+    included, and our FHIR calls carry `?patient=<uuid>`. uvicorn's access log does the same for inbound requests
+    (`GET /v1/w2/documents/5?patient_uuid=<uuid>`). Those loggers only speak up on warnings and errors; the structured
+    `agent.*` events and the audit chain are the record of who did what."""
+    for name in ("httpx", "httpcore", "uvicorn.access"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def setup_logging(level: int = logging.INFO) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    quiet_client_loggers()
 
 
 def log_event(logger: logging.Logger, msg: str, **fields: object) -> None:
