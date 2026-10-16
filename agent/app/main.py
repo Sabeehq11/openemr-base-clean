@@ -65,10 +65,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_inflight=cfg.max_inflight_chats, gauge=app.state.load))
     if cfg.w2_enabled:  # Week 2 seam: routes do not exist at all unless switched on
         from .w2.wiring import ChatDeps, build_w2
-        app.include_router(build_w2(cfg, app.state.gateway, PatientAuthorizer(cfg), audit, ChatDeps(
+        w2_router = build_w2(cfg, app.state.gateway, PatientAuthorizer(cfg), audit, ChatDeps(
             app.state.runner, lambda: make_llm(cfg), lambda d, e: app.state.finalizer(d, e), ConversationStore(),
             app.state.traces, cfg.openrouter_model if cfg.llm_provider == "openrouter" else cfg.llm_provider,
-            cfg.max_inflight_chats, app.state.load)))
+            cfg.max_inflight_chats, app.state.load), register_checks=lambda fn: setattr(app.state, "w2_checks", fn))
+        app.include_router(w2_router)
     if isinstance(audit, _TeeAudit):
         app.include_router(build_dashboard_router(cfg, app.state.traces, audit.chain, app.state.load))
 
@@ -102,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/ready")
     async def ready(request: Request) -> JSONResponse:
-        """Readiness: every dependency must be reachable, otherwise 503."""
+        """Readiness. ready: all good. degraded (200): only Week 2 is impaired. not_ready (503): a Week 1 dependency is down."""
         s: Settings = request.app.state.settings
         checks = {
             "openemr": await _check_openemr(s),
@@ -110,10 +111,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "trace_store": _check_trace_store(s),
             "audit_chain": _check_audit(request.app.state.audit_chain),
         }
-        ok = all(c["ok"] for c in checks.values())
-        return JSONResponse({"status": "ready" if ok else "not_ready", "checks": checks}, status_code=200 if ok else 503)
+        week1_ok = all(c["ok"] for c in checks.values())
+        body: dict[str, object] = {"checks": checks}
+        w2 = request.app.state.w2_checks() if getattr(request.app.state, "w2_checks", None) else None
+        if w2 is not None:  # only present when W2_ENABLED, so the Week 1 response is unchanged otherwise
+            body["w2_checks"] = w2
+        status, code = classify(week1_ok, w2)
+        return JSONResponse({"status": status, **body}, status_code=code)
 
     return app
+
+
+def classify(week1_ok: bool, w2: dict[str, dict[str, object]] | None) -> tuple[str, int]:
+    """(status, http code). A Week 1 failure is not_ready (503). A Week 2 failure alone is degraded (200), because
+    Week 1 chat still works and Week 2 has fallbacks (sparse-only search, lexical rerank)."""
+    if not week1_ok:
+        return "not_ready", 503
+    if w2 is not None and not all(c["ok"] for c in w2.values()):
+        return "degraded", 200
+    return "ready", 200
 
 
 async def _check_openemr(s: Settings) -> dict[str, object]:

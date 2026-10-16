@@ -23,6 +23,7 @@ from .api import build_w2_router
 from .chat import build_w2_chat_router
 from .ingest import Ingestor
 from .rag import build_retriever
+from .ready import ChecksFn, w2_checks
 from .render import available_renderers
 from .store import W2Store
 from .vlm import OpenRouterVlm, StubVlm, Vlm
@@ -56,13 +57,17 @@ class ChatDeps:
 
 
 def build_w2(settings: Settings, gateway: Gateway, authorizer: PatientAuthorizer, audit: AuditSink,
-             chat: ChatDeps | None = None) -> APIRouter:
+             chat: ChatDeps | None = None, register_checks: Callable[[ChecksFn], None] | None = None) -> APIRouter:
     store = W2Store(f"{settings.data_dir}/w2.db")
     ingestor = Ingestor(store, make_vlm(settings), settings.w2_max_upload_bytes, settings.w2_max_pages)
     retriever = build_retriever(settings, offline=settings.w2_use_stub_vlm)
     # A missing renderer is visible at startup, not discovered on the first upload.
     log_event(logger, "w2_startup", renderers=available_renderers(), stub_vlm=settings.w2_use_stub_vlm)
-    router = build_w2_router(gateway, authorizer, ingestor, store, retriever, audit, settings.w2_max_upload_bytes)
+    traces = chat.traces if chat is not None else None
+    router = build_w2_router(gateway, authorizer, ingestor, store, retriever, audit, settings.w2_max_upload_bytes,
+                             traces)
+    if register_checks is not None:  # /ready reads these; they make no provider call
+        register_checks(lambda: w2_checks(settings, store, retriever))
     if chat is not None:  # C2: the supervisor path. Without it only the C1 upload and retrieval routes exist.
         router.include_router(build_w2_chat_router(
             gateway, chat.runner, chat.llm_factory, chat.finalizer, chat.conversations, store, retriever, audit,

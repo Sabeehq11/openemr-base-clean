@@ -88,3 +88,53 @@ def test_redaction_removes_sensitive_values(raw):
 
 def test_redaction_of_sensitive_keys():
     assert redact({"access_token": "x", "ok": "y"}) == {"access_token": "[REDACTED]", "ok": "y"}
+
+
+def _w2_client(tmp_path, monkeypatch, **kw):
+    async def fake_get(self, url, **k):
+        return httpx.Response(200, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    s = Settings(data_dir=str(tmp_path), openemr_base_url="http://x", llm_provider="stub", w2_enabled=True,
+                 w2_use_stub_vlm=True,
+                 audit_hmac_key=SecretStr("test-only-audit-key-not-a-secret"), **kw)
+    return TestClient(create_app(s))
+
+
+def test_ready_is_unchanged_without_w2(tmp_path, monkeypatch):
+    # guards: the Week 1 /ready body changing when W2 is off
+    async def fake_get(self, url, **kw):
+        return httpx.Response(200, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    body = make_client(tmp_path, w2_enabled=False,  # agent/.env may switch W2 on
+                       audit_hmac_key=SecretStr("test-only-audit-key-not-a-secret")).get("/ready").json()
+    assert set(body) == {"status", "checks"} and body["status"] == "ready"
+
+
+def test_ready_reports_w2_checks_without_calling_a_provider(tmp_path, monkeypatch):
+    # guards: /ready spending money or hanging on a provider probe (the stubbed GET would be the only network call)
+    r = _w2_client(tmp_path, monkeypatch).get("/ready")
+    assert r.status_code == 200 and r.json()["status"] == "ready"
+    assert set(r.json()["w2_checks"]) == {"document_store", "vector_index", "reranker"}
+
+
+def test_ready_is_degraded_not_503_when_only_w2_is_impaired(tmp_path, monkeypatch):
+    # guards: a Week 2 outage (here: a live reranker with no key) taking Week 1 out of the load balancer
+    c = _w2_client(tmp_path, monkeypatch, openrouter_api_key=SecretStr(""))
+    c.app.state.settings.w2_use_stub_vlm = False
+    r = c.get("/ready")
+    assert r.status_code == 200 and r.json()["status"] == "degraded"
+    assert r.json()["w2_checks"]["reranker"]["ok"] is False
+
+
+def test_ready_is_not_ready_when_week1_fails_even_if_w2_is_fine(tmp_path, monkeypatch):
+    # guards: degraded masking a real Week 1 outage
+    c = _w2_client(tmp_path, monkeypatch)
+
+    async def down(self, url, **k):
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", down)
+    r = c.get("/ready")
+    assert r.status_code == 503 and r.json()["status"] == "not_ready"
