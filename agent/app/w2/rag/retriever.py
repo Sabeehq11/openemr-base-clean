@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 
+from app import tracing
 from app.logging_setup import log_event
 from contracts.w2 import Citation, GuidelineChunk, RetrievalResult, RetrievalStatus, RetrievedSnippet, SourceType
 
@@ -39,37 +40,60 @@ class Retriever:
         self._texts = [f"{c.section}. {c.text}" for c in chunks]
         self._bm25 = BM25(self._texts)
         self._vectors: list[list[float]] | None = None  # embedded on first use; an outage must not break startup
+        # In-memory state for /ready, so readiness never makes a (paid) provider call of its own. None = no traffic yet.
+        self.last_rerank_ok: bool | None = None
+        self.last_embed_ok: bool | None = None
+        self.corpus_size = len(chunks)
 
     def _dense(self, query: str, top: int) -> list[int]:
         try:
-            if self._vectors is None:
-                self._vectors = self._embedder.embed(self._texts)
-            q = self._embedder.embed([query])[0]
+            with tracing.span("w2", "embed"):
+                if self._vectors is None:
+                    self._vectors = self._embedder.embed(self._texts)
+                q = self._embedder.embed([query])[0]
+            self.last_embed_ok = True
         except EmbedError:
+            self.last_embed_ok = False
             return []  # sparse-only is a degraded but valid result; the corpus is retried on the next query
         sims = [(cosine(q, v), i) for i, v in enumerate(self._vectors)]
         return [i for s, i in sorted(sims, key=lambda p: (-p[0], p[1]))[:top] if s > 0]
 
     def retrieve(self, query: str, top: int = 5) -> RetrievalResult:
+        """One `w2/retrieve` span per call, with embed and rerank as children. Counts only: hits, candidates, skipped."""
+        with tracing.span("w2", "retrieve") as attrs:
+            result = self._retrieve(query, top, attrs)
+            attrs.update(hits=len(result.snippets), miss=int(result.status is not RetrievalStatus.OK),
+                         rerank_skipped=int(result.rerank_skipped))
+            return result
+
+    def _retrieve(self, query: str, top: int, attrs: dict) -> RetrievalResult:
         query = " ".join(query.split())[:MAX_QUERY_CHARS]
         top = max(1, min(top, 5))
         fused = rrf([self._bm25.rank(query, CANDIDATES), self._dense(query, CANDIDATES)])[:CANDIDATES]
+        attrs["candidates"] = len(fused)
         if not fused:
             return RetrievalResult(status=RetrievalStatus.EMPTY)
         docs = [self._texts[i] for i in fused]
         skipped = False
+        attrs["candidates"] = len(fused)
         try:
-            ranked = self._reranker.rerank(query, docs, top)
+            with tracing.span("w2", "rerank"):
+                ranked = self._reranker.rerank(query, docs, top)
             used = self._reranker.name
+            self.last_rerank_ok = True
         except RerankError as e:
             log_event(logger, "w2_rerank", status="skipped", error=error_code(e))
+            self.last_rerank_ok = False
             skipped = True
             used = self._fallback.name if self._fallback else "none"
             ranked = self._fallback.rerank(query, docs, top) if self._fallback else [(i, 1.0) for i in range(top)]
         kept = [(fused[i], s) for i, s in ranked if s >= self._min][:top]
         if not kept:
+            log_event(logger, "w2_retrieve", status="miss", hits=0, candidates=len(fused), rerank_skipped=skipped,
+                      reranker=used)
             return RetrievalResult(status=RetrievalStatus.EMPTY, rerank_skipped=skipped)
-        log_event(logger, "w2_retrieve", status="ok", hits=len(kept), rerank_skipped=skipped, reranker=used)
+        log_event(logger, "w2_retrieve", status="hit", hits=len(kept), candidates=len(fused), rerank_skipped=skipped,
+                  reranker=used)
         return RetrievalResult(status=RetrievalStatus.OK, rerank_skipped=skipped,
                                snippets=[self._snippet(i, s) for i, s in kept])
 

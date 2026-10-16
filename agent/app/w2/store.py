@@ -57,6 +57,11 @@ class W2Store:
         with self._conn() as c:
             c.executescript(SCHEMA)
 
+    def ping(self) -> None:
+        """Raises if the database cannot be opened or queried. Used by /ready."""
+        with self._conn() as c:
+            c.execute("SELECT 1").fetchone()
+
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
         c = sqlite3.connect(self._path, timeout=10)

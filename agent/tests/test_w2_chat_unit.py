@@ -135,7 +135,7 @@ def test_each_request_leaves_a_trace_with_its_outcome(tmp_path):  # guards: W2 r
     ts = TraceStore(str(tmp_path / "traces.db"))
     c, _ = build(tmp_path, TwoStageLLM(stage_b(("Hemoglobin A1c is 7.9 %.", ["doc:7#0"]))), traces=ts)
     assert "answer" in dict(events(ask(c, Q)))
-    rows = ts.query("select outcome from traces")
+    rows = ts.query("select outcome from traces where flow = 'w2_chat'")  # the setup upload leaves its own w2_ingest trace
     assert rows == [("answer",)]
 
 

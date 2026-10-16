@@ -13,6 +13,7 @@ import httpx
 from app.config import Settings
 from app.logging_setup import outbound_headers
 
+from ..limits import RERANK_TIMEOUT_S, RETRY_BASE_S
 from .bm25 import tokenize
 
 
@@ -65,7 +66,7 @@ class OpenRouterReranker:
         payload = {"model": self._model, "query": query, "documents": docs, "top_n": top}
         for attempt in (1, 2):
             try:
-                with httpx.Client(timeout=10.0, transport=self._transport) as c:
+                with httpx.Client(timeout=RERANK_TIMEOUT_S, transport=self._transport) as c:
                     r = c.post(self._url, json=payload, headers=outbound_headers({"Authorization": f"Bearer {self._key}"}))
             except httpx.HTTPError:
                 if attempt == 2:
@@ -75,7 +76,7 @@ class OpenRouterReranker:
                     return self._parse(r, len(docs))
                 if (r.status_code != 429 and r.status_code < 500) or attempt == 2:
                     raise RerankError(f"http_{r.status_code}")
-            self._sleep(0.4)
+            self._sleep(RETRY_BASE_S)
         raise RerankError("unreachable")
 
     def _parse(self, r: httpx.Response, n: int) -> list[tuple[int, float]]:

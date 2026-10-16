@@ -227,3 +227,46 @@ def test_default_corpus_ships_inside_the_agent_directory():
     agent_root = Path(__file__).resolve().parents[1]
     assert default_corpus_dir().resolve().is_relative_to(agent_root)
     assert len(load_corpus()) >= 15
+
+
+def _embed_settings():
+    return Settings(openrouter_api_key=SecretStr("k"), openrouter_base_url="http://x")
+
+
+def test_embedder_retries_once_on_5xx_then_succeeds(tmp_path):
+    # guards: a single transient provider error switching dense retrieval off for the request
+    calls = []
+
+    def handler(req):
+        calls.append(1)
+        if len(calls) == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1.0, 0.0]}]})
+
+    e = HostedEmbedder(_embed_settings(), str(tmp_path / "c.json"), transport=httpx.MockTransport(handler),
+                       sleep=lambda s: None)
+    assert e.embed(["alpha"]) == [[1.0, 0.0]] and len(calls) == 2
+
+
+def test_embedder_gives_up_after_one_retry_and_never_retries_a_4xx_or_timeout(tmp_path):
+    # guards: retry storms against a provider that is down, and a retried read timeout doubling the wait
+    seen = {"n": 0}
+
+    def always(status):
+        def h(req):
+            seen["n"] += 1
+            return httpx.Response(status)
+        return h
+
+    def timeout(req):
+        seen["n"] += 1
+        raise httpx.ReadTimeout("slow")
+
+    for handler, attempts, code in ((always(503), 2, "http_503"), (always(401), 1, "http_401"),
+                                    (timeout, 1, "timeout")):
+        seen["n"] = 0
+        e = HostedEmbedder(_embed_settings(), str(tmp_path / f"{code}.json"), transport=httpx.MockTransport(handler),
+                           sleep=lambda s: None)
+        with pytest.raises(EmbedError, match=code):
+            e.embed(["alpha"])
+        assert seen["n"] == attempts

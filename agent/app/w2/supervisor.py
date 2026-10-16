@@ -73,9 +73,21 @@ class Supervisor:
         h = Handoff(from_node=src, to_node=dst, reason=reason, correlation_id=correlation_id_var.get() or "-",
                     step=out.state.step)
         out.handoffs.append(h)
-        log_event(logger, "w2_handoff", from_node=src.value, to_node=dst.value, reason=reason.value, step=h.step)
+        log_event(logger, "w2_handoff", from_node=src.value, to_node=dst.value, reason=reason.value, step=h.step,
+                  span_id=tracing.current_span_id())
 
     async def run(self) -> Outcome:
+        """The whole graph run is one `w2/supervisor` span; each worker span below is its child."""
+        with tracing.span("w2", "supervisor") as attrs:
+            out = await self._run()
+            attrs.update(steps=out.state.step, handoffs=len(out.handoffs))
+            for h in out.handoffs:  # routing decisions: how often the supervisor chose each reason
+                if h.from_node is Node.SUPERVISOR:
+                    key = f"route_{h.reason.value}"
+                    attrs[key] = int(attrs.get(key, 0)) + 1
+            return out
+
+    async def _run(self) -> Outcome:
         start = self._clock()
         out = Outcome(end="ready", state=GraphState())
         while True:
@@ -102,7 +114,7 @@ class Supervisor:
     async def _run_node(self, node: Node, timeout_s: float) -> WorkerResult:
         t0 = time.perf_counter()
         try:
-            with tracing.span("w2", node.value):  # a child of the request trace; parent ids arrive in C4
+            with tracing.span("w2", node.value):  # a child of the supervisor span
                 return await asyncio.wait_for(self._nodes[node](), timeout=timeout_s)
         except asyncio.TimeoutError:
             status, code = WorkerStatus.TIMEOUT, "timeout"

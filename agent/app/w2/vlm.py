@@ -10,12 +10,12 @@ from typing import Protocol
 
 import httpx
 
+from app import tracing
 from app.config import Settings
 from app.logging_setup import outbound_headers
 from contracts.w2 import DocType
 
-TIMEOUT_S = 30.0
-RETRY_BASE_S = 0.4
+from .limits import RETRY_BASE_S, VLM_TIMEOUT_S as TIMEOUT_S
 
 
 class VlmError(Exception):
@@ -56,6 +56,18 @@ def _pdf_part(pdf: bytes) -> dict:
                                      "file_data": "data:application/pdf;base64," + base64.b64encode(pdf).decode()}}
 
 
+def _record_usage(usage: object) -> None:
+    """Token counts and cost the provider reports for this call go to the request's trace. Numbers only; a missing or
+    malformed `usage` is ignored, never an error."""
+    if not isinstance(usage, dict):
+        return
+    try:
+        tracing.add_usage(int(usage.get("prompt_tokens", 0)), int(usage.get("completion_tokens", 0)),
+                          float(usage.get("cost", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        return
+
+
 class OpenRouterVlm:
     """Page images (or, as the last resort, the PDF itself) to OpenRouter. 30 s timeout, one jittered retry on 429,
     5xx or connect failure. The key never reaches a log line."""
@@ -71,11 +83,14 @@ class OpenRouterVlm:
         parts: list[dict] = [{"type": "text", "text": "Extract the data as specified."}]
         parts += [_pdf_part(native_pdf)] if native_pdf is not None else [_image_part(p) for p in pages]
         payload = {"model": self.model, "temperature": 0, "response_format": {"type": "json_object"},
+                   "usage": {"include": True},
                    "messages": [{"role": "system", "content": PROMPTS[doc_type]},
                                 {"role": "user", "content": parts}]}
         r = await self._post(payload, key)
         try:
-            return str(r.json()["choices"][0]["message"]["content"])
+            body = r.json()
+            _record_usage(body.get("usage"))
+            return str(body["choices"][0]["message"]["content"])
         except (ValueError, KeyError, IndexError, TypeError):
             raise VlmError("unusable_response") from None
 

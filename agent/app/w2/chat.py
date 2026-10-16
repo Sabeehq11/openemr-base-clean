@@ -30,6 +30,7 @@ from contracts.w2 import Node
 
 from .assemble import build_answer
 from .facts import RunContext
+from .limits import SUPERVISOR_WORKER_TIMEOUT_S
 from .rag.retriever import Retriever
 from .stage_a import ChartRun, chart_node, raw_records
 from .store import W2Store
@@ -37,7 +38,7 @@ from .supervisor import Supervisor
 from .workers import EvidenceRetrieverWorker, IntakeExtractorWorker, wants_evidence
 
 logger = logging.getLogger("agent.w2.chat")
-WORKER_TIMEOUT_S = 30.0  # outer bound per node; the Week 1 loop keeps its own 20 s deadline inside it
+WORKER_TIMEOUT_S = SUPERVISOR_WORKER_TIMEOUT_S  # outer bound per node; the Week 1 loop keeps its own 20 s deadline inside it
 
 
 def build_w2_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callable[[], LLMClient],
@@ -67,7 +68,7 @@ def build_w2_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Call
         box = ["error"]
 
         async def stream() -> AsyncIterator[str]:
-            trace, tok = tracing.start(http.correlation_id, model)
+            trace, tok = tracing.start(http.correlation_id, model, flow="w2_chat")
             gauge.inflight += 1
             try:
                 async for chunk in _run():

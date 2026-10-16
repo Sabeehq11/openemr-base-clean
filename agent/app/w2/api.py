@@ -9,22 +9,28 @@ from __future__ import annotations
 
 import base64
 import binascii
+import functools
 import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app import tracing
 from app.authz import PatientAuthorizer
 from app.gateway import AuditSink, CallerContext, Gateway
+from app.logging_setup import correlation_id_var, log_event
+from app.tracing import TraceStore
 from contracts.w2 import DocType
 
-from .ingest import Ingestor, RejectedUpload
+from .ingest import Ingestor, RejectedUpload, field_stats
 from .rag.retriever import Retriever
 from .render import available_renderers
 from .store import W2Store
 
+logger = logging.getLogger("agent.w2.api")
 GENERIC_DENIAL = {"error": "forbidden", "message": "You do not have access to this patient."}
 BAD_REQUEST = {"error": "invalid_request", "message": "Malformed request."}
 NOT_FOUND = {"error": "not_found", "message": "No such document."}
@@ -58,8 +64,35 @@ class RetrieveBody(_Body):
 
 
 def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: Ingestor, store: W2Store,
-                    retriever: Retriever, audit: AuditSink, max_upload_bytes: int) -> APIRouter:
+                    retriever: Retriever, audit: AuditSink, max_upload_bytes: int,
+                    traces: TraceStore | None = None) -> APIRouter:
     router = APIRouter(prefix="/v1/w2")
+
+    def traced(flow: str):
+        """One trace per request (latency, outcome, spans), saved even if the handler raises. A handler may set
+        `trace.outcome` itself (extracted, failed, hit, miss); otherwise it follows the HTTP status. No-op without a
+        store, so Week 1 and the C1 tests are unchanged."""
+        def deco(fn):
+            @functools.wraps(fn)
+            async def wrapper(*args, **kwargs):
+                if traces is None:
+                    return await fn(*args, **kwargs)
+                trace, tok = tracing.start(correlation_id_var.get(), flow=flow)
+                try:
+                    resp = await fn(*args, **kwargs)
+                    if trace.outcome == "error":
+                        code = resp.status_code
+                        trace.outcome = ("ok" if code == 200 else "denied" if code == 403
+                                         else "rejected" if code < 500 else "error")
+                    return resp
+                finally:
+                    traces.save(trace)
+                    try:
+                        tracing.end(tok)
+                    except ValueError:
+                        pass
+            return wrapper
+        return deco
 
     async def deny_unless_allowed(ctx: CallerContext, patient: str) -> JSONResponse | None:
         decision = await authorizer.authorize(ctx.token, patient, ctx.user_uuid)
@@ -76,6 +109,7 @@ def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: I
             return None
 
     @router.post("/preflight")
+    @traced("w2_preflight")
     async def preflight(request: Request) -> JSONResponse:
         """Authorize and validate, store nothing. The module calls this before it writes anything to OpenEMR, so a
         denied or invalid upload leaves no document, lab row or extraction behind."""
@@ -101,6 +135,7 @@ def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: I
         return JSONResponse({"ok": True})
 
     @router.post("/documents")
+    @traced("w2_ingest")
     async def upload(request: Request) -> JSONResponse:
         ctx = await gateway.verify(request)
         if len(ctx.body) > max_upload_bytes * 4 // 3 + 4096:
@@ -114,13 +149,23 @@ def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: I
             data = base64.b64decode(body.content_b64, validate=True)
         except (binascii.Error, ValueError):
             return JSONResponse(BAD_REQUEST, status_code=400)
+        log_event(logger, "w2_ingest_start", doc_type=body.doc_type.value, size_bytes=len(data))
         try:
-            res = await ingestor.ingest(body.patient_uuid, body.document_id, body.doc_type, data)
+            with tracing.span("w2", "ingest") as attrs:
+                res = await ingestor.ingest(body.patient_uuid, body.document_id, body.doc_type, data)
+                attrs.update(field_stats(res.record))
         except RejectedUpload as e:
             audit.record("w2_upload_rejected", user=ctx.user_uuid, patient=body.patient_uuid, code=e.code,
                          correlation_id=ctx.correlation_id)
             return JSONResponse({"error": e.code, "message": "This file cannot be accepted."},
                                 status_code=_REJECT_STATUS.get(e.code, 400))
+        if (tr := tracing.current()) is not None:
+            # extracted | failed | duplicate: the words the dashboard and the extraction alert count
+            tr.outcome = ("duplicate" if res.duplicate
+                          else "extracted" if res.record.status.value == "extracted" else "failed")
+        log_event(logger, "w2_ingest_complete", status=res.record.status.value, duplicate=res.duplicate,
+                  error_code=res.record.error_code.value if res.record.error_code else None,
+                  doc_type=res.record.doc_type.value)
         audit.record("w2_upload", user=ctx.user_uuid, patient=body.patient_uuid, document_id=res.record.document_id,
                      status=res.record.status.value, duplicate=res.duplicate, correlation_id=ctx.correlation_id)
         return JSONResponse({"document": json.loads(res.record.model_dump_json()), "duplicate": res.duplicate,
@@ -163,6 +208,7 @@ def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: I
         return JSONResponse({"updated": updated})
 
     @router.post("/retrieve")
+    @traced("w2_retrieve")
     async def retrieve(request: Request) -> JSONResponse:
         ctx = await gateway.verify(request)
         body: RetrieveBody | None = parse(ctx, RetrieveBody)
@@ -173,6 +219,8 @@ def build_w2_router(gateway: Gateway, authorizer: PatientAuthorizer, ingestor: I
         # The query is the question plus test names only: no patient identifier or chart value is added.
         query = " ".join([body.question, *body.test_names])
         result = retriever.retrieve(query)
+        if (tr := tracing.current()) is not None:
+            tr.outcome = "hit" if result.snippets else "miss"
         audit.record("w2_retrieve", user=ctx.user_uuid, patient=body.patient_uuid, status=result.status.value,
                      count=len(result.snippets), rerank_skipped=result.rerank_skipped,
                      correlation_id=ctx.correlation_id)

@@ -8,6 +8,8 @@ import hashlib
 import json
 import logging
 import math
+import random
+import time
 from pathlib import Path
 from typing import Protocol
 
@@ -16,6 +18,7 @@ import httpx
 from app.config import Settings
 from app.logging_setup import outbound_headers
 
+from ..limits import EMBED_TIMEOUT_S, RETRY_BASE_S
 from .bm25 import tokenize
 
 logger = logging.getLogger("agent.w2.embed")
@@ -60,8 +63,9 @@ class HashedEmbedder:
 class HostedEmbedder:
     """OpenRouter embeddings with an on-disk cache. Raises EmbedError on any failure so the caller can fall back."""
 
-    def __init__(self, settings: Settings, cache_path: str, transport: httpx.BaseTransport | None = None) -> None:
-        self._s, self._transport = settings, transport
+    def __init__(self, settings: Settings, cache_path: str, transport: httpx.BaseTransport | None = None,
+                 sleep=time.sleep) -> None:
+        self._s, self._transport, self._sleep = settings, transport, sleep
         self.name = f"hosted:{settings.w2_embed_model}"
         self._cache_path = Path(cache_path)
         try:
@@ -78,20 +82,36 @@ class HostedEmbedder:
             self._fetch(missing)
         return [self._cache[self._key(t)] for t in texts]
 
+    def _post(self, texts: list[str], key: str) -> httpx.Response:
+        """One retry, jittered, on 429, 5xx or a connect failure. A read timeout is not retried."""
+        for attempt in (1, 2):
+            try:
+                with httpx.Client(timeout=EMBED_TIMEOUT_S, transport=self._transport) as c:
+                    r = c.post(f"{self._s.openrouter_base_url}/embeddings",
+                               json={"model": self._s.w2_embed_model, "input": texts},
+                               headers=outbound_headers({"Authorization": f"Bearer {key}"}))
+            except httpx.TimeoutException:
+                raise EmbedError("timeout") from None
+            except httpx.HTTPError:
+                if attempt == 2:
+                    raise EmbedError("unreachable") from None
+            else:
+                if r.status_code == 200:
+                    return r
+                if (r.status_code != 429 and r.status_code < 500) or attempt == 2:
+                    raise EmbedError(f"http_{r.status_code}")
+            self._sleep(RETRY_BASE_S + random.uniform(0, RETRY_BASE_S))
+        raise EmbedError("unreachable")
+
     def _fetch(self, texts: list[str]) -> None:
         key = self._s.openrouter_api_key.get_secret_value()
         if not key:
             raise EmbedError("not_configured")
+        r = self._post(texts, key)
         try:
-            with httpx.Client(timeout=20.0, transport=self._transport) as c:
-                r = c.post(f"{self._s.openrouter_base_url}/embeddings",
-                           json={"model": self._s.w2_embed_model, "input": texts},
-                           headers=outbound_headers({"Authorization": f"Bearer {key}"}))
-            if r.status_code != 200:
-                raise EmbedError(f"http_{r.status_code}")
             data = sorted(r.json()["data"], key=lambda d: d["index"])
             vectors = [_normalize([float(x) for x in d["embedding"]]) for d in data]
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError):
             raise EmbedError("unusable_response") from None
         if len(vectors) != len(texts):
             raise EmbedError("count_mismatch")

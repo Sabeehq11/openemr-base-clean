@@ -109,6 +109,7 @@ async def test_one_log_event_per_handoff_with_correlation_id_and_no_values(caplo
         correlation_id_var.reset(token)
     assert len(events) == len(out.handoffs)
     assert all(e["correlation_id"] == "corr-12345678" for e in events)
-    assert all(set(e) <= {"ts", "level", "logger", "correlation_id", "msg", "from_node", "to_node", "reason", "step"}
+    assert all(set(e) <= {"ts", "level", "logger", "correlation_id", "msg", "from_node", "to_node", "reason", "step",
+                                 "span_id"}
                for e in events)
     assert [e["step"] for e in events] == sorted(e["step"] for e in events)

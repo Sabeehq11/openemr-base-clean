@@ -94,7 +94,7 @@ def build(tmp_path, llm, finalizer=passthrough, upload=True, fhir_down=False, tr
     ingestor, store = make_ingestor(tmp_path)
     retr = build_retriever(s, offline=True)
     app = FastAPI()
-    app.include_router(build_w2_router(gw, Authz(), ingestor, store, retr, audit, 1_000_000))
+    app.include_router(build_w2_router(gw, Authz(), ingestor, store, retr, audit, 1_000_000, traces))
     app.include_router(build_w2_chat_router(gw, runner, lambda: llm, finalizer, ConversationStore(), store, retr, audit, traces))
     client = TestClient(app)
     if upload:

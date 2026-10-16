@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from app import tracing
 from app.logging_setup import log_event
 from contracts.w2 import DocStatus, DocType, DocumentRecord, ErrorCode, RenderMode
 
@@ -33,6 +34,24 @@ class RejectedUpload(Exception):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+def field_stats(rec: DocumentRecord) -> dict[str, int | float]:
+    """Per-document extraction outcome as counts only: how many fields were read, how many were supported (cited and
+    checked against the page), and the mean model confidence. Never a field name's value or any text."""
+    items: list = []
+    if rec.lab is not None:
+        items = list(rec.lab.rows)
+    elif rec.intake is not None:
+        i = rec.intake
+        items = [f for f in (*(getattr(i.demographics, k) for k in ("first_name", "last_name", "date_of_birth", "sex",
+                                                                    "phone", "email", "address")),
+                             i.chief_concern, *i.current_medications, *i.allergies, *i.family_history)
+                 if f is not None]
+    supported = sum(1 for f in items if f.support.value == "supported")
+    conf = round(sum(f.confidence for f in items) / len(items), 3) if items else 0.0
+    return {"fields_total": len(items), "fields_supported": supported, "confidence_avg": conf,
+            "failed": int(rec.status is not DocStatus.EXTRACTED)}
 
 
 @dataclass(frozen=True)
@@ -84,7 +103,8 @@ class Ingestor:
         if mode is RenderMode.IMAGES and not pages:
             return self._failed(patient_uuid, document_id, doc_type, sha, ErrorCode.RENDER_FAILED, None, None)
         try:
-            raw = await self._vlm.extract(doc_type, pages, native_pdf)
+            with tracing.span("w2", "vlm_extract"):
+                raw = await self._vlm.extract(doc_type, pages, native_pdf)
         except VlmError as e:
             log_event(logger, "w2_extract", status="vlm_error", error=error_code(e), document_id=document_id)
             return self._failed(patient_uuid, document_id, doc_type, sha, ErrorCode.VLM_UNAVAILABLE, mode, renderer)
@@ -120,7 +140,10 @@ class Ingestor:
             return self._failed(patient, document_id, doc_type, sha, ErrorCode.SCHEMA_INVALID, mode, renderer)
         rec = self._store.save_extracted(patient, document_id, doc_type, sha, facts, date_, mode, renderer,
                                          self._vlm.model)
-        log_event(logger, "w2_extract", status="ok", document_id=document_id, facts=len(facts))
+        stats = field_stats(rec)
+        log_event(logger, "w2_extract", status="ok", document_id=document_id, facts=len(facts),
+                  fields_supported=stats["fields_supported"], fields_total=stats["fields_total"],
+                  confidence_avg=stats["confidence_avg"])
         return IngestResult(rec, False)
 
     def _failed(self, patient: str, document_id: int, doc_type: DocType, sha: str, code: ErrorCode,
