@@ -39,6 +39,8 @@ abstract class UploadProxyTestCase extends TestCase
     protected array $deleted = [];
     /** Status the fake agent returns for /v1/w2/preflight */
     protected int $preflightStatus = 200;
+    /** Status the fake agent returns for /v1/w2/documents/{id}/links */
+    protected int $linkStatus = 200;
     protected UploadStore $store;
 
     /** @return array<string, mixed> */
@@ -71,6 +73,9 @@ abstract class UploadProxyTestCase extends TestCase
                     ? ['document' => $this->document($status), 'duplicate' => false]
                     : ['error' => 'unsupported_type'];
                 return [$agentStatus, json_encode($payload, JSON_THROW_ON_ERROR)];
+            }
+            if (str_ends_with($url, '/links')) {
+                return [$this->linkStatus, $this->linkStatus === 200 ? '{"updated":1}' : '{"error":"agent_error"}'];
             }
             return [200, str_ends_with($url, '/retrieve') ? '{"status":"ok","snippets":[]}' : '{"updated":1}'];
         };

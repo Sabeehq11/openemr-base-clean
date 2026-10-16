@@ -97,4 +97,55 @@ final class UploadProxyChartIsolatedTest extends UploadProxyTestCase
         $this->assertSame([], $this->store->log);
         $this->assertCount(2, $this->sent); // preflight, then extraction; no links, no guideline
     }
+
+    /**
+     * Runs the upload with PHP's error_log pointed at a temp file and returns the w2_openemr_write events it wrote.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function loggedSteps(string $cid): array
+    {
+        $file = tempnam(sys_get_temp_dir(), 'w2log');
+        $this->assertIsString($file);
+        $previous = ini_set('error_log', $file);
+        try {
+            $this->proxy()->handle($this->session(), $this->upload(), $cid);
+        } finally {
+            ini_set('error_log', $previous === false ? '' : $previous);
+        }
+        $raw = (string) file_get_contents($file);
+        unlink($file);
+        $events = [];
+        foreach (explode("\n", $raw) as $line) {
+            $start = strpos($line, '{"event"');
+            if ($start !== false) {
+                $events[] = json_decode(substr($line, $start), true, 512, JSON_THROW_ON_ERROR);
+            }
+        }
+        return $events;
+    }
+
+    public function testWriteAndLinkStepsAreLoggedWithTheCorrelationIdAndCountsOnly(): void
+    {
+        // Guards a trace that stops at the agent: the OpenEMR write and the link back must carry the correlation id.
+        $events = $this->loggedSteps('cid-link-1');
+        $this->assertSame(['openemr_write', 'link'], array_column($events, 'step'));
+        foreach ($events as $e) {
+            $this->assertSame('w2_openemr_write', $e['event']);
+            $this->assertSame('cid-link-1', $e['correlation_id']);
+            $this->assertSame('ok', $e['status']);
+            $this->assertSame(['event', 'correlation_id', 'step', 'status', 'rows'], array_keys($e));
+            $this->assertIsInt($e['rows']);
+        }
+    }
+
+    public function testFailedLinkIsLoggedFailedAndDoesNotChangeTheChartResult(): void
+    {
+        // Guards a silent link failure, and the logging line itself changing the upload outcome.
+        $this->linkStatus = 502;
+        $events = $this->loggedSteps('cid-link-2');
+        $this->assertSame('failed', $events[1]['status']);
+        $this->assertSame('link', $events[1]['step']);
+        $this->assertSame('ok', $events[0]['status']);
+    }
 }

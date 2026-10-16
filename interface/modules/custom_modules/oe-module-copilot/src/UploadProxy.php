@@ -187,19 +187,23 @@ final class UploadProxy
             $res = $this->writer->write($pid, $documentId, $rows, $date);
         } catch (\Throwable) {
             // The writer rolled back, so no partial report exists. The document and the extraction remain.
+            self::logStep($auth[2], 'openemr_write', 'failed', count($rows));
             return ['written' => 0, 'skipped' => count($rows), 'state' => 'failed'];
         }
+        self::logStep($auth[2], 'openemr_write', 'ok', $res['written']);
         if ($res['links'] !== []) {
             $links = [];
             foreach ($res['links'] as $index => $uuid) {
                 $links[(string) $index] = $uuid;
             }
-            $this->agent->post(
+            $linked = $this->agent->post(
                 '/v1/w2/documents/' . $documentId . '/links',
                 // An object, not a list: PHP encodes keys "0", "1", ... as a JSON array, which the agent rejects.
                 ['patient_uuid' => $patient, 'links' => (object) $links],
                 ...$auth,
             );
+            // The reply is not used: a failed link leaves the report written and only loses the click-to-source link.
+            self::logStep($auth[2], 'link', ($linked !== null && $linked[0] === 200) ? 'ok' : 'failed', count($links));
         }
         return ['written' => $res['written'], 'skipped' => $res['skipped'], 'state' => 'ok'];
     }
@@ -232,6 +236,21 @@ final class UploadProxy
             'test_names' => array_slice(array_values(array_unique($names)), 0, 10),
         ], ...$auth);
         return ($reply !== null && $reply[0] === 200) ? $reply[1] : null;
+    }
+
+    /**
+     * One JSON line per OpenEMR write, so a Week 2 trace can be followed from the correlation id into the chart.
+     * Correlation id, step, status and a row count only: never a patient id, file name or lab value.
+     */
+    private static function logStep(string $cid, string $step, string $status, int $rows): void
+    {
+        error_log((string) json_encode([
+            'event' => 'w2_openemr_write',
+            'correlation_id' => $cid,
+            'step' => $step,
+            'status' => $status,
+            'rows' => $rows,
+        ]));
     }
 
     /** File kind by content, never by the browser's declared type or file name. */
