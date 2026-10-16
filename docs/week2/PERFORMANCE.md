@@ -10,7 +10,7 @@ scripted chat model and mocked FHIR. They measure plumbing overhead. They say no
 |---|---|
 | Harness, stub tier | Done, tested (`agent/tests/test_w2_measure_unit.py`) |
 | Week 1 shared path with W2 off and on | Done (stub) |
-| Real-model run (10 uploads, 10 chats) | **Pending approval. Not run. No paid call has been made.** |
+| Real-model traces | Recorded on the isolated agent (`tmp/agent-real-data/traces.db`). Not a 10-by-10 harness run. See below. |
 
 ## How the real run is gated
 
@@ -71,26 +71,55 @@ p50 difference: -0.2 percent, inside noise. Turning Week 2 on does not slow the 
 this check showed 2 failures per 60 because the per-user rate limit of 60 a minute applies to the harness; the
 comparison now disables the limit on both sides, and says so in the code.)
 
-## Real-model run: pending approval
+## Real model (isolated agent, 2026-10-16)
 
-To be filled in only after the budget owner approves in chat. Planned: 10 uploads (5 lab, 5 intake) and 10 chats from
-committed synthetic fixtures only, one run. Expected, to be confirmed or refuted by the data:
+Source: `tmp/agent-real-data/traces.db` on `agent-real` (`127.0.0.1:8402`). The live agent (`agent-agent-1`, started
+2026-10-16 03:03:43Z) was not recreated and was not called. Model: `anthropic/claude-sonnet-4.5`. Every p95 below with
+n under 20 is the near-maximum, not a stable tail.
 
-- The VLM call is the bottleneck for ingestion (the VLM timeout of 30 s is also the ceiling for the ingestion SLO).
-- Retrieval is dominated by the rerank call over the network.
-- Cost per document and per chat, read from `traces.db` (`cost_usd`, tokens), then projected to production volume.
+| Flow | n | p50 ms | p95 ms | SLO | Result |
+|---|---|---|---|---|---|
+| W2 chat, outcome `answer` | 9 | 19 771 | 24 647 | none set | n/a. One extra chat was a denial at 298 ms and $0; it is not in this row |
+| Retrieval span `retrieve` | 11 | 867 | 2 551 | p95 under 3 000 | met for this sample. Close to the line |
+| Ingestion, outcome `extracted` | 1 | 10 705 | not estimated | p95 under 30 000 | that one sample is under the line. A p95 needs more than one extraction |
+| Ingestion, outcome `duplicate` | 2 | 314 | 325 | none | no VLM call, $0 |
 
-What the report will contain: per-step p50 and p95 from spans, ingestion p95 and retrieval p95 against the SLOs, actual
-dev spend, projected cost per document and per chat, and the bottleneck.
+Per step, real (p50 / p95 ms): `chart_facts` 14 219 / 18 389 (the Week 1 tool loop plus Sonnet), `w2_synthesis`
+4 743 / 5 221, `vlm_extract` 10 353 (n=1, 97% of that upload), `rerank` 370 / 1 599, `embed` 0.39 / 2 165.
+Six of eleven embeds were a cache hit (at most 1 ms). The five misses were the network embedder.
 
-Honest limit for that run: with about 10 samples, p95 is the near-maximum, not a stable tail estimate. The report will
-say so beside every p95. Supervisor caps (6 steps, 40 s) and the SLO constants in `app/metrics.py` change only if that
-data requires it.
+Bottleneck: a Week 2 chat is the chart loop, not retrieval. `chart_facts` is about 70% of the 20 s chat. Retrieval is
+second, and only when the embed cache is cold. For the one real extraction, the VLM call is the ingestion bottleneck.
 
-| Real-model measure | Value |
-|---|---|
-| Ingestion p50 / p95 | pending |
-| Retrieval p50 / p95 | pending |
-| Chat p50 / p95 | pending |
-| Spend for the run | pending |
-| Cost per document / per chat | pending |
+### CPU, memory, throughput
+
+| Measurement | What ran | CPU | Memory | Throughput |
+|---|---|---|---|---|
+| Isolated container | `agent-real`, 20 s of `GET /ready` (no model call), 3 `docker stats` samples | 0.3% average, 0.5% max, of one core | 78.2 MiB | 1.19 ready checks/s. Each check takes about 440 ms because it probes OpenEMR |
+| Stub, in process | 30 uploads + 30 chats, canned VLM, one core, sequential | 98% of one core for that 0.6 s | 118 MiB RSS | 97 calls/s until the test client's rate limit stopped it |
+
+CPU and memory during a real VLM or chat call inside the container were not sampled. A model call is mostly waiting on
+the network, so the idle container numbers are the resident size, not the cost of a call. Concurrent real-model
+throughput was not measured: one answered chat takes about 20 s, so one worker does about three a minute, and that is
+an arithmetic consequence of the latency, not a load test.
+
+### Spend
+
+| Item | USD | Basis |
+|---|---|---|
+| Nine answered chats in `traces.db` | 0.4485 | OpenRouter `usage.cost` recorded by the agent. Mean 0.0498 per chat (range 0.0368-0.0644) |
+| One lab extraction in `traces.db` | 0.0174 | same. 1 717 prompt tokens, 818 completion tokens, 10.7 s |
+| Two direct VLM calls this session (lab and intake fixtures, short prompt, no agent, no OpenEMR write) | 0.0195 | provider `usage.cost` on the HTTP response: lab 0.0106 at 4.7 s, intake 0.0088 at 3.8 s. Not the production extraction prompt, so not an ingestion latency |
+| **Recorded this evidence set** | **0.4854** | 0.4659 in the isolated trace store plus 0.0195 direct |
+| Embedding and rerank | not in `traces.db` | five embed misses and eleven reranks happened. Their provider cost is untracked. At list price an embed of a short query is negligible; a Cohere rerank is billed per search and is the untracked line. Not confirmed against a statement |
+| Provider account total | unverified | the key is shared with Week 1 and the demo agent, so an account total would not confirm this table |
+
+Week 1 comparison, same model, real, from `docs/week1/PERFORMANCE.md` and `docs/week1/AI_COST_ANALYSIS.md`: a brief was
+p50 about 14.5 s and p95 about 20.3 s at 10 users, and 0.0246 USD. A Week 2 chat is about 5 s slower at the median and
+about twice the price, because it keeps that chart loop and adds retrieval plus a synthesis call.
+
+Projection, assumed, not measured. Using the Week 1 clinic-day assumptions (20 briefs a physician a day, 22 days) and
+the measured 0.0498 USD chat: about 21.90 USD per physician per month if every brief is a Week 2 chat, against about
+10.80 USD for the Week 1 brief. Two new documents a day at the one measured 0.0174 USD adds about 0.77 USD. The
+untracked rerank is extra and is not in either figure. Supervisor caps were not changed; the samples do not breach the
+40 s cap or the 30 s ingestion SLO. Retrieval p95 at 2 551 ms is inside 3 000 ms but has no slack for a slower tail.

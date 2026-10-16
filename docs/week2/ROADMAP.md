@@ -60,7 +60,7 @@ Dates are from the PRD: MVP Tuesday 11:59 PM, Early Submission Thursday 11:59 PM
 | C2 | Supervisor and two workers | done (see [checkpoints/C2](checkpoints/C2-supervisor-and-workers.md)) |
 | C3 | Eval gate (the PRD hard gate) | done (see [checkpoints/C3](checkpoints/C3-eval-gate.md)) |
 | C4 | Observability, contracts, ops | done (see [checkpoints/C4](checkpoints/C4-observability-and-contracts.md)) |
-| C5 | Deploy, performance, defend | built; the real-model run and the live apply await approval (see [checkpoints/C5](checkpoints/C5-deploy-and-defend.md)) |
+| C5 | Deploy, performance, defend | built; real-model latency and cost are in [PERFORMANCE.md](PERFORMANCE.md) (see [checkpoints/C5](checkpoints/C5-deploy-and-defend.md)) |
 
 ### C0. Baseline and architecture defense
 Docs and records only. Tag `w1-baseline`, record a measured baseline, write `W2_ARCHITECTURE.md`, split the README into Week 1 and Week 2 sections. No application code changes. Detail: [checkpoints/C0-baseline.md](checkpoints/C0-baseline.md).
@@ -104,7 +104,7 @@ Docs and records only. Tag `w1-baseline`, record a measured baseline, write `W2_
 
 - OpenEMR write path (scope or pid mismatch): spike first, fall back to the module PHP path.
 - VLM hallucination: strict schemas, required quote, `unsupported` marking.
-- Latency: Week 1 real-model p95 is about 19 s; measure Week 2 separately and set per-worker timeouts.
+- Latency: Week 2 chat p50 is about 20 s and p95 about 25 s (n=9, a near-maximum), against a Week 1 brief p50 of about 14.5 s. Per-worker timeouts were not changed. See `PERFORMANCE.md`.
 - Eval flakiness: the gate uses the deterministic stub tier only.
 - PHI leakage: synthetic fixtures only, scrubbing plus a CI check.
 - Time: C3 cannot slip. Cut stretch items first, and scope C1 and C2 to the minimum C3 needs.
