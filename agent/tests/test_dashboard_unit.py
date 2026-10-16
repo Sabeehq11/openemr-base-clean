@@ -9,7 +9,7 @@ from app.main import create_app
 
 def client(tmp_path, token="dash-token", audit_key="k" * 32):
     s = Settings(data_dir=str(tmp_path), dashboard_token=SecretStr(token), audit_hmac_key=SecretStr(audit_key),
-                 module_signing_secret=SecretStr("s"), llm_provider="stub")
+                 module_signing_secret=SecretStr("s"), llm_provider="stub", w2_enabled=False)  # .env may enable W2
     return TestClient(create_app(s))
 
 
@@ -110,3 +110,39 @@ def test_dashboard_shows_counts_only_no_identifiers(tmp_path):
     body = c.get("/dashboard.json", headers=basic("dash-token")).text
     assert set(c.get("/dashboard.json", headers=basic("dash-token")).json()["load"]) == {"inflight", "shed", "cap"}
     assert "uuid" not in body.lower()
+
+
+def test_dashboard_json_has_a_w2_section_only_when_w2_is_enabled(tmp_path):
+    # guards: Week 2 cards or alerts leaking into the Week 1 dashboard payload
+    auth = basic("dash-token")
+    off = client(tmp_path / "off").get("/dashboard.json", headers=auth).json()
+    assert "w2" not in off and len(off["alerts"]) == 3
+    s = Settings(data_dir=str(tmp_path / "on"), dashboard_token=SecretStr("dash-token"), w2_enabled=True,
+                 w2_use_stub_vlm=True, audit_hmac_key=SecretStr("k" * 32), module_signing_secret=SecretStr("s"),
+                 llm_provider="stub")
+    c = TestClient(create_app(s))
+    on = c.get("/dashboard.json", headers=auth).json()
+    assert {"has_data", "ingestions", "retrieval_hit_rate", "eval"} <= set(on["w2"]) and len(on["alerts"]) == 6
+    assert "Week 2" in c.get("/dashboard", headers=auth).text
+
+
+def test_deployed_dashboard_says_eval_regression_is_enforced_in_ci(tmp_path, monkeypatch):
+    # guards: a green "ok" for w2_eval_regression in an image that has no eval files to compare
+    from pathlib import Path
+
+    from app import metrics
+
+    gone = Path(tmp_path / "absent.json")
+    monkeypatch.setattr(metrics, "EVAL_RESULTS", gone)
+    monkeypatch.setattr(metrics, "EVAL_BASELINE", gone)
+    monkeypatch.setattr(metrics.eval_status, "__defaults__", (gone, gone))
+    monkeypatch.setattr(metrics.evaluate_w2_alerts, "__defaults__", (None, gone, gone))
+    s = Settings(data_dir=str(tmp_path / "d"), dashboard_token=SecretStr("dash-token"), w2_enabled=True,
+                 w2_use_stub_vlm=True, audit_hmac_key=SecretStr("k" * 32), module_signing_secret=SecretStr("s"),
+                 llm_provider="stub")
+    c = TestClient(create_app(s))
+    page = c.get("/dashboard", headers=basic("dash-token")).text
+    assert "n/a (CI)" in page and "enforced by CI" in page
+    row = next(a for a in c.get("/dashboard.json", headers=basic("dash-token")).json()["alerts"]
+               if a["name"] == "w2_eval_regression")
+    assert row["firing"] is False and row["samples"] == 0
