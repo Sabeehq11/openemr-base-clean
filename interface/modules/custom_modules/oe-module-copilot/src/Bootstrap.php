@@ -31,6 +31,14 @@ final class Bootstrap
         $this->dispatcher->addListener(RenderEvent::EVENT_BODY_RENDER_POST, $this->renderDock(...));
     }
 
+    /** Asset URL with a content-based version, so a browser (Safari in particular) never reuses a stale copy. */
+    private function assetUrl(string $web, string $file): string
+    {
+        $path = dirname(__DIR__) . '/public/assets/' . $file;
+        $mtime = is_file($path) ? filemtime($path) : false;
+        return $web . 'assets/' . $file . ($mtime === false ? '' : '?v=' . $mtime);
+    }
+
     public function renderDock(): void
     {
         $session = SessionWrapperFactory::getInstance()->getActiveSession();
@@ -41,9 +49,11 @@ final class Bootstrap
         // The CSRF token is for the logged-in user's own session. It is the only secret placed in the page.
         $csrf = CsrfUtils::collectCsrfToken($session);
         ?>
-        <link rel="stylesheet" href="<?php echo attr($web); ?>assets/copilot.css">
-        <div id="copilot-root" data-endpoint="<?php echo attr($web); ?>chat.php" data-csrf="<?php echo attr($csrf); ?>" hidden></div>
-        <script src="<?php echo attr($web); ?>assets/copilot.js"></script>
+        <link rel="stylesheet" href="<?php echo attr($this->assetUrl($web, 'copilot.css')); ?>">
+        <div id="copilot-root" data-endpoint="<?php echo attr($web); ?>chat.php" data-upload-endpoint="<?php echo attr($web); ?>upload.php" data-source-endpoint="<?php echo attr($web); ?>source.php" data-csrf="<?php echo attr($csrf); ?>" hidden></div>
+        <script src="<?php echo attr($this->assetUrl($web, 'copilot-source.js')); ?>"></script>
+        <script src="<?php echo attr($this->assetUrl($web, 'copilot.js')); ?>"></script>
+        <script src="<?php echo attr($this->assetUrl($web, 'copilot-upload.js')); ?>"></script>
         <?php
     }
 }

@@ -21,6 +21,17 @@ admin_is_default() {
 }
 check "admin password is not the default 'pass'" '! admin_is_default'
 
+# Every ACTIVE login, not just admin: a stock demo user left on a default password is reachable from the public login page.
+# Read-only; prints usernames only. Exit 0 = all clean, 1 = weak accounts found, anything else = the audit did not run,
+# and that counts as a failure (fail closed), so a missing script or a stopped container cannot let the tunnel start.
+audit_out=$(docker exec -u apache "$OE" php /var/www/localhost/htdocs/openemr/scripts/copilot/fixture_accounts_audit.php 2>/dev/null)
+audit_rc=$?
+case "$audit_rc" in
+  0) ok "no active account uses a default or guessable password" ;;
+  1) bad "active accounts use a default or guessable password: $(printf '%s\n' "$audit_out" | awk '/WEAK/ {print $1}' | paste -sd, -). Change the password or deactivate the account" ;;
+  *) bad "the weak-password audit could not run (exit $audit_rc); treating that as a failure" ;;
+esac
+
 # 2. Ports: only OpenEMR may be reachable from other machines
 for spec in "8320:MariaDB" "8310:phpMyAdmin" "8400:agent"; do
   port="${spec%%:*}"; name="${spec#*:}"

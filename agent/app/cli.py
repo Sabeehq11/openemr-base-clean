@@ -11,7 +11,7 @@ import sys
 
 from .audit import ChainedAuditSink
 from .config import get_settings
-from .metrics import evaluate_alerts
+from .metrics import evaluate_alerts, evaluate_w2_alerts
 from .tracing import TraceStore
 
 
@@ -19,7 +19,8 @@ def main(argv: list[str]) -> int:
     cfg = get_settings()
     cmd = argv[0] if argv else ""
     if cmd == "alerts":
-        alerts = evaluate_alerts(TraceStore(f"{cfg.data_dir}/traces.db"))
+        traces = TraceStore(f"{cfg.data_dir}/traces.db")
+        alerts = evaluate_alerts(traces) + (evaluate_w2_alerts(traces) if cfg.w2_enabled else [])
         if "--json" in argv:
             print(json.dumps([a.__dict__ for a in alerts], indent=2))
         else:

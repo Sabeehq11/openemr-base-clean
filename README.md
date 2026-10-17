@@ -29,13 +29,72 @@ An AI Clinical Co-Pilot for a primary care physician, built on OpenEMR. Week 1 d
 | [docs/week1/AI_COST_ANALYSIS.md](docs/week1/AI_COST_ANALYSIS.md) | Measured cost per request, 100 to 100K user projections, architecture changes per tier |
 | [agent/README.md](agent/README.md) | Co-Pilot setup guide, tests, endpoints, observability |
 
-**Deployed app:** _TBD (see [deploy/](deploy/))_ (demo data only, no real PHI)
+**Deployed app:** a Cloudflare quick tunnel to the local stack, started on demand (demo data only, no real PHI). The URL changes every time the tunnel starts, so no permanent link is kept here; the date and the exact steps of the last deployment are in [Deployed app (Week 2)](#deployed-app-week-2). A VPS path exists in [deploy/](deploy/) and is untested.
+
+## Week 1 baseline and Week 2 (multimodal)
+
+This repository has two layers. Everything outside the "Week 2" column below exists today and is the tagged baseline (`w1-baseline`). Anything marked **(planned)** is design only and does not run yet. Week 2 items without that mark are built (checkpoint C1) and only run with `W2_ENABLED=true`.
+
+| | Week 1 baseline (built, tagged `w1-baseline`) | Week 2 multimodal (in progress on branch `week2-agentforge`) |
+|---|---|---|
+| What it does | Answers a physician's questions about the open chart, with cited, verified answers | Adds lab PDF and intake form upload, extraction with source citations, and guideline evidence retrieval |
+| Endpoint | `POST /v1/chat` | `POST /v1/w2/chat` **(planned)** |
+| Switch | Always on | `W2_ENABLED`, off by default. With it off, behavior is identical to Week 1 |
+| Design doc | [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md) | [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) |
+| Status | Agent, module, verifier, audit chain, dashboard, evals and load tests built | C0 (baseline and architecture) and C1 (upload, extract, retrieve) done. C2 to C5 not started. `POST /v1/w2/chat` arrives in C2; C1 has `/v1/w2/documents`, `/v1/w2/documents/{id}`, `/v1/w2/documents/{id}/links` and `/v1/w2/retrieve` |
+| Measured baseline | [docs/week2/BASELINE.md](docs/week2/BASELINE.md): 522 offline agent tests passed (30 live tests skipped), 60 of 60 stub evals passed | The same results must hold with `W2_ENABLED` at 0 and 1 |
+
+Week 2 planning documents: [W2_ARCHITECTURE.md](W2_ARCHITECTURE.md) (architecture and defense), [docs/week2/ROADMAP.md](docs/week2/ROADMAP.md) (roadmap and checkpoints), [docs/week2/BASELINE.md](docs/week2/BASELINE.md) (measured Week 1 baseline).
+
+### Environment variables
+
+Agent settings live in `agent/.env` (copy from `agent/.env.example`; git-ignored, never commit real values). Defaults are those in `agent/app/config.py`.
+
+| Variable | Default | Needed by | Purpose |
+|---|---|---|---|
+| `OPENEMR_BASE_URL` | `https://localhost:9300` | Week 1 | OpenEMR address as seen from the agent |
+| `OPENEMR_VERIFY_TLS` | `true` | Week 1 | Set `false` only for the local self-signed certificate |
+| `LLM_PROVIDER` | `stub` | Week 1 | `stub` (no network, deterministic) or `openrouter` |
+| `OPENROUTER_API_KEY` | empty | Week 1, only with `openrouter` | Model provider key |
+| `OPENROUTER_MODEL` | `anthropic/claude-sonnet-4.5` | Week 1 | Model name |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Week 1 | Provider endpoint |
+| `MODULE_SIGNING_SECRET` | empty | Week 1 | Signs module-to-agent requests (integrity only) |
+| `AUDIT_HMAC_KEY` | empty | Week 1 | Key for the audit hash chain |
+| `DASHBOARD_TOKEN` | empty (dashboard off) | Week 1 | Password for `/dashboard` |
+| `OAUTH_CLIENT_ID`, `OAUTH_CLIENT_SECRET` | empty | Week 1 | OAuth client the module registered for the agent |
+| `DATA_DIR` | `./data` | Week 1 | Agent SQLite files (traces, audit) |
+| `TOOL_TIMEOUT_S` | `5.0` | Week 1 | Timeout per OpenEMR tool call |
+| `MAX_INFLIGHT_CHATS` | `0` (off) | Week 1 | Optional cap on chats in progress |
+| `RATE_LIMIT_PER_MIN` | `60` | Week 1 | Per-user request limit, 0 disables |
+| `COPILOT_FIXTURE_PASSWORD` | none | Week 1 setup scripts | Password for seeded fixture users (12+ characters) |
+| `W2_ENABLED` | off | Week 2 | Turns the Week 2 flow on (routes are 404 without it) |
+| `W2_VLM_MODEL` | `anthropic/claude-sonnet-4.5` | Week 2 | Vision model for document extraction, through OpenRouter |
+| `W2_RERANK_MODEL` | `cohere/rerank-v3.5` | Week 2 | Reranker for guideline retrieval, called through OpenRouter `/rerank` with `OPENROUTER_API_KEY`; with no key the offline lexical reranker is used |
+| `W2_EMBED_MODEL` | `openai/text-embedding-3-small` | Week 2 | Hosted dense embeddings (cached); CI uses a hashed embedder |
+| `W2_USE_STUB_VLM` | `false` | Week 2 | Canned extraction, no network. Offline demos and CI only |
+| `W2_MAX_UPLOAD_BYTES`, `W2_MAX_PAGES` | 8 MiB, 5 | Week 2 | Upload caps, enforced before any model call |
+
+### Deployed app (Week 2)
+
+OpenEMR with the Co-Pilot dock is reached through a Cloudflare quick tunnel. Only OpenEMR is behind the tunnel; the agent stays on `127.0.0.1:8400` and the internal Docker network and is reached only by the module with the signed-request secret.
+
+```bash
+scripts/copilot/deploy_w2.sh                 # dry run: reports what is done and what would change, changes nothing
+scripts/copilot/deploy_w2.sh --apply         # does only the steps not already done; safe to run twice
+scripts/copilot/deploy_w2.sh --apply --enable-w2   # also turns W2_ENABLED on (edits that one key in agent/.env)
+```
+
+The script keeps existing patients, documents, OpenEMR settings, the OAuth client, the module config, the `agent_data` volume and `agent/.env`. It never runs `down`, `down -v`, `unharden` or `seed_demo_patients.py` (which deletes every `pid>=100` patient); `--seed` is a separate opt-in and refuses to run when any demo patient has a document or the agent holds an extraction. The tunnel start runs the security gate first.
+
+Known limits: a quick-tunnel URL changes on every start and the tunnel stops with the machine, so there is no permanent link. The deployed check is one Playwright spec: `BASE_URL=<tunnel url> COPILOT_FIXTURE_PASSWORD=... npx playwright test specs/w2-click-to-source.spec.ts` from `tests/playwright`. Last deployment record: see [docs/week2/checkpoints/C5-deploy-and-defend.md](docs/week2/checkpoints/C5-deploy-and-defend.md).
+
+The Week 2 variables are read only when `W2_ENABLED=true`; with it off the agent behaves exactly as at `w1-baseline`. C1 demo: `scripts/copilot/demo_c1.sh` (offline, stub model) and [docs/week2/checkpoints/C1-mvp-ingest-extract-retrieve.md](docs/week2/checkpoints/C1-mvp-ingest-extract-retrieve.md).
 
 ## Architecture overview
 
 A thin OpenEMR module (`oe-module-copilot`) mounts a chat dock in the Tabs shell and forwards signed, patient-scoped requests to a separate Python agent service. The agent reads OpenEMR only over FHIR/REST with the physician's own OAuth2 token, through six typed read-only tools. Every answer passes a verification layer (source attribution plus deterministic clinical rules) before display. The agent writes its own append-only audit log and a SQLite trace store (served at `/dashboard`; Langfuse is not deployed), each tied to one correlation ID that also goes out on every call to OpenEMR and the model provider. Details, trust boundaries and tradeoffs: [docs/week1/ARCHITECTURE.md](docs/week1/ARCHITECTURE.md). Status: the agent, module, verifier, audit chain, dashboard, evals and load tests are built (Checkpoints 1 to 3). Setup, endpoints and tests: [agent/README.md](agent/README.md). On-call: [agent/RUNBOOK.md](agent/RUNBOOK.md). Authorization findings: [agent/AUTHZ_PROOF.md](agent/AUTHZ_PROOF.md). Eval results: [evals/results/stub-latest.md](evals/results/stub-latest.md).
 
-## Run the agent
+## Run the agent (Week 1 baseline)
 
 After OpenEMR is up (below), the agent is a separate container. Short version, full steps in [agent/README.md](agent/README.md):
 

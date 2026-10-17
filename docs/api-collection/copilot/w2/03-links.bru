@@ -1,0 +1,24 @@
+meta {
+  name: Report written OpenEMR record uuids (signed)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{agent}}/v1/w2/documents/9001/links
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "links": {
+      "0": "00000000-0000-0000-0000-000000000001"
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+}

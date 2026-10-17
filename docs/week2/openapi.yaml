@@ -1,0 +1,456 @@
+openapi: 3.0.3
+info:
+  title: Clinical Co-Pilot Agent, Week 2 endpoints
+  version: "2.0.0-c4"
+  description: |
+    The Week 2 surface of the agent: document upload and extraction, guideline retrieval, the multi-agent chat
+    stream, and the two probes. Week 1 routes (/v1/chat, /v1/tools/*, /dashboard*) are deliberately not described
+    here. agent/tests/test_w2_openapi_unit.py checks this file against the running app for exactly these paths.
+
+    Every /v1/w2/* call is signed by the OpenEMR module; a browser never reaches these routes directly. Error bodies
+    never contain document content, and a care-team denial is always the same 403 whatever the reason.
+servers:
+  - url: http://127.0.0.1:8400
+    description: Local agent (bound to localhost, not published)
+paths:
+  /health:
+    get:
+      tags: [ops]
+      summary: Liveness. Independent of every dependency.
+      operationId: health
+      responses:
+        "200":
+          description: The process is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, enum: [ok]}
+  /ready:
+    get:
+      tags: [ops]
+      summary: Readiness. ready, degraded (Week 2 impaired only) or not_ready.
+      description: |
+        ready and degraded both return 200. degraded means only a Week 2 check failed and Week 1 is unaffected.
+        not_ready returns 503 when a Week 1 dependency is down. w2_checks appears only when W2_ENABLED=1. No check
+        calls a model provider; they report configuration and the last real call.
+      operationId: ready
+      responses:
+        "200":
+          description: Ready or degraded.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Readiness"}
+        "503":
+          description: A Week 1 dependency is not reachable.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Readiness"}
+  /v1/w2/preflight:
+    post:
+      tags: [documents]
+      summary: Authorize and validate an upload; store nothing.
+      operationId: w2Preflight
+      parameters: &signing
+        - {$ref: "#/components/parameters/Timestamp"}
+        - {$ref: "#/components/parameters/Nonce"}
+        - {$ref: "#/components/parameters/Signature"}
+        - {$ref: "#/components/parameters/User"}
+        - {$ref: "#/components/parameters/Token"}
+        - {$ref: "#/components/parameters/CorrelationId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PreflightRequest"}
+      responses:
+        "200":
+          description: The file would be accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {type: boolean}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "413": {$ref: "#/components/responses/Rejected"}
+        "415": {$ref: "#/components/responses/Rejected"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/documents:
+    post:
+      tags: [documents]
+      summary: Extract a stored document into cited lab rows or intake fields.
+      description: The same bytes for the same patient return the stored extraction (duplicate is true).
+      operationId: w2Upload
+      parameters: *signing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/UploadRequest"}
+      responses:
+        "200":
+          description: Extraction finished, or the document was kept with status extraction_failed and zero rows.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UploadResponse"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "413": {$ref: "#/components/responses/Rejected"}
+        "415": {$ref: "#/components/responses/Rejected"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/documents/{document_id}:
+    get:
+      tags: [documents]
+      summary: Read a stored extraction.
+      operationId: w2GetDocument
+      parameters:
+        - {name: document_id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {name: patient_uuid, in: query, required: true, schema: {type: string, pattern: '^[0-9a-fA-F\-]{32,36}$'}}
+        - {$ref: "#/components/parameters/Timestamp"}
+        - {$ref: "#/components/parameters/Nonce"}
+        - {$ref: "#/components/parameters/Signature"}
+        - {$ref: "#/components/parameters/User"}
+        - {$ref: "#/components/parameters/Token"}
+        - {$ref: "#/components/parameters/CorrelationId"}
+      responses:
+        "200":
+          description: The stored record.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [document]
+                properties:
+                  document: {$ref: "#/components/schemas/DocumentRecord"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/documents/{document_id}/page:
+    post:
+      tags: [documents]
+      summary: Render one page of a stored document for the click-to-source viewer.
+      description: |
+        The module sends the document bytes it read from OpenEMR; the agent stores none. The bytes must hash to the
+        extraction's sha256, otherwise the request is refused (400), so a page is only ever shown for the document
+        that was extracted. 404 means no such document or no such page.
+      operationId: w2GetPage
+      parameters:
+        - {name: document_id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {$ref: "#/components/parameters/Timestamp"}
+        - {$ref: "#/components/parameters/Nonce"}
+        - {$ref: "#/components/parameters/Signature"}
+        - {$ref: "#/components/parameters/User"}
+        - {$ref: "#/components/parameters/Token"}
+        - {$ref: "#/components/parameters/CorrelationId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PageRequest"}
+      responses:
+        "200":
+          description: The page image.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PageResponse"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/Rejected"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/documents/{document_id}/links:
+    post:
+      tags: [documents]
+      summary: Record the OpenEMR record uuid written for each extracted row.
+      operationId: w2SaveLinks
+      parameters:
+        - {name: document_id, in: path, required: true, schema: {type: integer, minimum: 1}}
+        - {$ref: "#/components/parameters/Timestamp"}
+        - {$ref: "#/components/parameters/Nonce"}
+        - {$ref: "#/components/parameters/Signature"}
+        - {$ref: "#/components/parameters/User"}
+        - {$ref: "#/components/parameters/Token"}
+        - {$ref: "#/components/parameters/CorrelationId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LinksRequest"}
+      responses:
+        "200":
+          description: Number of rows updated.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updated]
+                properties:
+                  updated: {type: integer, minimum: 0}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/retrieve:
+    post:
+      tags: [retrieval]
+      summary: Hybrid guideline retrieval (BM25 plus dense, fused, reranked).
+      description: The query is the question plus test names only. No patient identifier or chart value is added.
+      operationId: w2Retrieve
+      parameters: *signing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RetrieveRequest"}
+      responses:
+        "200":
+          description: Cited snippets, or status empty when nothing passes the minimum score.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RetrievalResult"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+  /v1/w2/chat:
+    post:
+      tags: [chat]
+      summary: Multi-agent chat over the chart, uploaded documents and guidelines (server-sent events).
+      description: |
+        Events: conversation, then one of answer, declined, denied, degraded or error, then end. A care-team denial
+        arrives as a denied event on the stream, not as a 403.
+      operationId: w2Chat
+      parameters: *signing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ChatRequest"}
+      responses:
+        "200":
+          description: An event stream.
+          content:
+            text/event-stream:
+              schema: {type: string}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "429": {$ref: "#/components/responses/RateLimited"}
+        "503":
+          description: Over the in-flight cap (only when MAX_INFLIGHT_CHATS is set). Retry after the header value.
+          headers:
+            Retry-After: {schema: {type: string}}
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+components:
+  parameters:
+    Timestamp: {name: x-copilot-timestamp, in: header, required: true, schema: {type: string}, description: Unix seconds, 60 s window.}
+    Nonce: {name: x-copilot-nonce, in: header, required: true, schema: {type: string}, description: Single use.}
+    Signature: {name: x-copilot-signature, in: header, required: true, schema: {type: string}, description: HMAC over method, path, timestamp, nonce, body, user and token.}
+    User: {name: x-copilot-user, in: header, required: true, schema: {type: string}}
+    Token: {name: x-copilot-token, in: header, required: true, schema: {type: string}, description: The user's OpenEMR token. The agent never stores it.}
+    CorrelationId: {name: x-correlation-id, in: header, required: false, schema: {type: string}, description: Echoed on the response and carried through every log line, span and audit row.}
+  responses:
+    BadRequest:
+      description: Malformed request.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Unauthorized:
+      description: Bad signature, stale timestamp or replayed nonce. One generic body for every cause.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/GatewayError"}
+    Forbidden:
+      description: The user is not on this patient's care team. Same body whatever the reason.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    NotFound:
+      description: No such document for this patient.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    Rejected:
+      description: The file was refused (too large, too many pages, or not a PDF or supported image).
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+    RateLimited:
+      description: Per-user rate limit.
+      headers:
+        Retry-After: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/GatewayError"}
+  schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: {type: string}
+        message: {type: string}
+    GatewayError:
+      type: object
+      required: [detail]
+      properties:
+        detail: {$ref: "#/components/schemas/Error"}
+    Readiness:
+      type: object
+      required: [status, checks]
+      properties:
+        status: {type: string, enum: [ready, degraded, not_ready]}
+        checks:
+          type: object
+          description: Week 1 checks (openemr, llm_provider, trace_store, audit_chain).
+          additionalProperties: {$ref: "#/components/schemas/Check"}
+        w2_checks:
+          type: object
+          description: Present only when W2_ENABLED=1 (document_store, vector_index, reranker).
+          additionalProperties: {$ref: "#/components/schemas/Check"}
+    Check:
+      type: object
+      required: [ok]
+      properties:
+        ok: {type: boolean}
+        detail: {type: string}
+    DocType:
+      type: string
+      enum: [lab_pdf, intake_form]
+    PatientUuid:
+      type: string
+      pattern: '^[0-9a-fA-F\-]{32,36}$'
+    PreflightRequest:
+      type: object
+      additionalProperties: false
+      required: [patient_uuid, doc_type, content_b64]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        doc_type: {$ref: "#/components/schemas/DocType"}
+        content_b64: {type: string, description: The file, base64 encoded.}
+    UploadRequest:
+      type: object
+      additionalProperties: false
+      required: [patient_uuid, document_id, doc_type, content_b64]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        document_id: {type: integer, minimum: 1, description: The OpenEMR documents.id of the stored file.}
+        doc_type: {$ref: "#/components/schemas/DocType"}
+        content_b64: {type: string}
+    UploadResponse:
+      type: object
+      required: [document, duplicate, renderers_available]
+      properties:
+        document: {$ref: "#/components/schemas/DocumentRecord"}
+        duplicate: {type: boolean}
+        renderers_available:
+          type: array
+          items: {type: string}
+    PageRequest:
+      type: object
+      additionalProperties: false
+      required: [patient_uuid, page, content_b64]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        page: {type: integer, minimum: 1, maximum: 50, description: 1-based page number.}
+        content_b64: {type: string, description: The stored file, base64 encoded.}
+    PageResponse:
+      type: object
+      required: [page, total_pages, mime, content_b64]
+      properties:
+        page: {type: integer, minimum: 1}
+        total_pages: {type: integer, minimum: 1}
+        mime: {type: string, enum: [image/png, image/jpeg]}
+        content_b64: {type: string, description: The page image, base64 encoded.}
+    LinksRequest:
+      type: object
+      additionalProperties: false
+      required: [patient_uuid, links]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        links:
+          type: object
+          maxProperties: 200
+          description: Row index as text to OpenEMR record uuid.
+          additionalProperties: {type: string}
+    RetrieveRequest:
+      type: object
+      additionalProperties: false
+      required: [patient_uuid, question]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        question: {type: string, minLength: 1, maxLength: 500}
+        test_names:
+          type: array
+          maxItems: 10
+          items: {type: string}
+    ChatRequest:
+      type: object
+      required: [patient_uuid, question]
+      properties:
+        patient_uuid: {$ref: "#/components/schemas/PatientUuid"}
+        question: {type: string, minLength: 1, maxLength: 1000}
+        conversation_id: {type: string, nullable: true}
+    Citation:
+      type: object
+      required: [source_type, source_id, page_or_section, field_or_chunk_id, quote_or_value]
+      properties:
+        source_type: {type: string, enum: [chart, extracted, guideline]}
+        source_id: {type: string}
+        page_or_section: {type: string}
+        field_or_chunk_id: {type: string}
+        quote_or_value: {type: string}
+        bbox:
+          type: array
+          nullable: true
+          minItems: 4
+          maxItems: 4
+          items: {type: number}
+    DocumentRecord:
+      type: object
+      required: [document_id, patient_uuid, doc_type, sha256, status, extractor_version, created_at]
+      properties:
+        document_id: {type: integer, minimum: 1}
+        patient_uuid: {type: string}
+        doc_type: {$ref: "#/components/schemas/DocType"}
+        sha256: {type: string}
+        status: {type: string, enum: [extracted, extraction_failed]}
+        error_code: {type: string, nullable: true, enum: [render_failed, vlm_unavailable, schema_invalid, not_run, null]}
+        render_mode: {type: string, nullable: true, enum: [images, native_pdf, null]}
+        renderer: {type: string, nullable: true}
+        model: {type: string, nullable: true}
+        extractor_version: {type: string}
+        created_at: {type: string}
+        lab: {type: object, nullable: true, description: "Lab rows with citations (contracts/w2/extraction.py: LabPdfExtraction)."}
+        intake: {type: object, nullable: true, description: "Intake fields with citations (contracts/w2/extraction.py: IntakeFormExtraction)."}
+        links: {type: object, additionalProperties: {type: string}}
+    RetrievalResult:
+      type: object
+      required: [status]
+      properties:
+        status: {type: string, enum: [ok, empty]}
+        rerank_skipped: {type: boolean}
+        snippets:
+          type: array
+          items:
+            type: object
+            required: [chunk_id, score, text, title, publisher, year, citation]
+            properties:
+              chunk_id: {type: string}
+              score: {type: number}
+              text: {type: string}
+              title: {type: string}
+              publisher: {type: string}
+              year: {type: integer}
+              citation: {$ref: "#/components/schemas/Citation"}

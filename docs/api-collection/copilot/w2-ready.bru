@@ -1,0 +1,23 @@
+meta {
+  name: Week 2 ready or degraded (needs W2_ENABLED)
+  type: http
+  seq: 23
+}
+
+get {
+  url: {{agent}}/ready
+  body: none
+  auth: none
+}
+
+assert {
+  res.status: eq 200
+  res.body.status: in [ready, degraded]
+  res.body.w2_checks.document_store.ok: eq true
+}
+
+docs {
+  With W2_ENABLED the body adds w2_checks (document_store, vector_index, reranker). A Week 2 problem alone, such as a
+  missing OPENROUTER_API_KEY, makes the status degraded but keeps the 200, because Week 1 and the Week 2 fallbacks still
+  work. A Week 1 dependency failure is not_ready (503). These checks never call a model provider.
+}

@@ -27,7 +27,7 @@ final class ChatProxyIsolatedTest extends TestCase
     /** @var list<array{url: string, headers: array<string,string>, body: string}> */
     private array $sent = [];
 
-    private function proxy(int $agentStatus = 200, bool $tokenFails = false): ChatProxy
+    private function proxy(int $agentStatus = 200, bool $tokenFails = false, bool $w2Chat = false): ChatProxy
     {
         $this->sent = [];
         return new ChatProxy(
@@ -47,7 +47,27 @@ final class ChatProxyIsolatedTest extends TestCase
             },
             fn (): string => 'nonce-0123456789ab',
             fn (): int => 1800000000,
+            $w2Chat,
         );
+    }
+
+    public function testW2ChatPathIsSelectedByConfigAndSignedForThatPath(): void
+    {
+        $emit = function (string $c): void {
+        };
+        $this->assertSame(['status' => 200], $this->proxy(w2Chat: true)->handle($this->session(), ['question' => 'brief'], 'corr-12345678', $emit));
+        $this->assertSame('http://agent:8400/v1/w2/chat', $this->sent[0]['url']);
+        $h = $this->sent[0]['headers'];
+        $expected = (new RequestSigner('secret'))->sign('POST', '/v1/w2/chat', '1800000000', 'nonce-0123456789ab', $this->sent[0]['body'], self::USER, $h['x-copilot-token']);
+        $this->assertSame($expected, $h['x-copilot-signature']);
+    }
+
+    public function testBrowserInputCannotSelectTheW2Path(): void
+    {
+        $emit = function (string $c): void {
+        };
+        $this->proxy()->handle($this->session(), ['question' => 'brief', 'path' => '/v1/w2/chat', 'w2_chat' => true], 'corr-12345678', $emit);
+        $this->assertSame('http://agent:8400/v1/chat', $this->sent[0]['url']);
     }
 
     /** @return array{userUuid: ?string, pid: mixed, csrfOk: bool} */

@@ -58,6 +58,16 @@ def _():
     assert "step" not in r.names  # unknown tool is not executed
 
 
+@case("inv-w2-ingest-is-not-a-chat-tool", "invariant", "model gaining a document write path")
+def _():
+    from app.prompts import TOOL_SPECS
+    names = {t["function"]["name"] for t in TOOL_SPECS}
+    assert not {n for n in names if "extract" in n or "attach" in n or "upload" in n or "w2" in n}
+    h = Harness(full_chart(), [call("attach_and_extract", file_path="/etc/passwd"), answer(claim("done"))])
+    r = h.chat("read this file")
+    assert "step" not in r.names  # unknown tool is not executed
+
+
 @case("inv-answer-never-without-verifier-pass", "invariant", "unverified draft reaching the user")
 def _():
     r = _brief(full_chart(), answer(claim("Metformin 900 mg", "MedicationRequest/m1")))

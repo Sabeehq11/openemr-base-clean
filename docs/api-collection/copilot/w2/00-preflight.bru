@@ -1,0 +1,29 @@
+meta {
+  name: Preflight an upload: authorize and validate, store nothing (signed)
+  type: http
+  seq: 0
+}
+
+post {
+  url: {{agent}}/v1/w2/preflight
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "doc_type": "lab_pdf",
+    "content_b64": "{{lab_pdf_b64}}"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.ok: eq true
+}
+
+docs {
+  The module calls this before it writes anything to OpenEMR. Another physician's patient gets 403, a bad file 413 or 415.
+  It stores nothing in w2.db.
+}

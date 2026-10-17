@@ -1,0 +1,108 @@
+##
+# Week 2 agent eval gate. Blocks a pull request when the agent's tests, the 50-case golden set, the baseline gate,
+# the dependency audit, the secret scan, lint, typecheck, coverage or the security scan fail. No network call to a
+# model, no API key: the vision and language models are deterministic stubs, so the result depends only on the code.
+#
+# No paths filter. A filter that lists agent/ and evals/ lets a module, UI or OpenAPI-only change merge without
+# this gate. scripts/w2/workflow_scope.py fails the build if a filter that omits those surfaces is put back.
+#
+# This repository's default branch is main (the upstream OpenEMR workflows say master, so both are listed). Work
+# happens on week2-agentforge, so pushes there run the gate too.
+# To make this block merging, mark the "W2 eval gate" job as a required status check in the repository's branch
+# protection settings for main. That is a repository setting and cannot be set from code. The upstream
+# "All Checks Passed" workflow only watches master, so it does not wait for this job here.
+
+name: W2 Eval Gate
+
+on:
+  push:
+    branches:
+    - main
+    - master
+    - week2-agentforge
+  pull_request:
+    branches:
+    - main
+    - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  w2-eval-gate:
+    name: W2 eval gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # the secret scan reads history
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'  # matches agent/Dockerfile
+        cache: pip
+        cache-dependency-path: |
+          agent/requirements.txt
+          scripts/w2/ci-requirements.txt
+
+    - name: Install agent dependencies
+      run: python -m pip install -r agent/requirements.txt -r scripts/w2/ci-requirements.txt pip-audit
+
+    - name: Lint (syntax and undefined names only; style is not gated)
+      run: ruff check agent evals scripts/w2 scripts/copilot --select E9,F63,F7,F82
+
+    - name: Typecheck
+      # mypy 1.15 has no baseline flag. scripts/w2/mypy_gate.py fails on any error not already
+      # listed in scripts/w2/mypy-baseline.txt, and allows an old error to be fixed.
+      run: python scripts/w2/mypy_gate.py
+
+    - name: Workflow scope (module, UI and OpenAPI changes cannot skip this gate)
+      run: python scripts/w2/workflow_scope.py
+
+    - name: Agent tests and coverage
+      # First-party line coverage of the agent only. pytest-cov fails the step below 90%.
+      # The report is the uncovered list; nothing outside agent/app and agent/contracts is measured.
+      working-directory: agent
+      run: python -m pytest tests -m "not live" -q --cov=app --cov=contracts --cov-report=term-missing --cov-report=xml:../tmp/w2-coverage/coverage.xml --cov-fail-under=90
+
+    - name: Golden set and eval gate
+      run: python -m evals.gate
+
+    - name: Dependency audit (fails on any advisory not recorded in scripts/w2/pip-audit-known.txt)
+      run: scripts/w2/pip_audit.sh
+
+    - name: Secret scan
+      run: python scripts/copilot/secret_scan.py
+
+    - name: Security scan (Bandit, medium or high severity and confidence)
+      # Reuses the same idea as .github/workflows/semgrep.yml, scoped to the agent. Semgrep's
+      # registry rules need a network fetch and a container this job does not have; Bandit is the
+      # pinned local scanner. -ll -iii drops the low-confidence SQL notes on the constant flow filter.
+      run: bandit -r agent/app agent/contracts -ll -iii -q
+
+    - name: Module syntax (php -l)
+      # The isolated PHPUnit job needs the OpenEMR container. This job only checks that module PHP parses.
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y php-cli
+        find interface/modules/custom_modules/oe-module-copilot -name '*.php' -print0 | xargs -0 -n1 php -l
+
+    - name: UI syntax (node --check)
+      run: |
+        find interface/modules/custom_modules/oe-module-copilot/public/assets tests/js -name '*.js' -print0 \
+          | xargs -0 -n1 node --check
+
+    - name: Upload eval results
+      if: always()  # the evidence is most useful when the gate fails
+      uses: actions/upload-artifact@v4
+      with:
+        name: w2-eval-results
+        path: |
+          evals/results/
+          tmp/w2-coverage/coverage.xml
+        if-no-files-found: warn

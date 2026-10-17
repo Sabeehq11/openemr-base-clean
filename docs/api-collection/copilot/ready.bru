@@ -12,10 +12,13 @@ get {
 
 assert {
   res.status: eq 200
-  res.body.status: eq ready
+  res.body.status: in [ready, degraded]
   res.body.checks.audit_chain.ok: eq true
 }
 
 docs {
-  Reports ready only when OpenEMR FHIR, the LLM provider, the trace store and the audit chain are healthy. Returns 503 otherwise.
+  ready: OpenEMR FHIR, the LLM provider, the trace store and the audit chain are healthy (and, with W2_ENABLED, the
+  Week 2 checks too). degraded (still 200): only a Week 2 check failed (`w2_checks`: document_store, vector_index,
+  reranker); Week 1 works and Week 2 uses its fallbacks. not_ready (503): a Week 1 dependency is down.
+  The Week 2 checks never call a provider; they report configuration and the last real call.
 }

@@ -121,6 +121,7 @@ $proxy = new ChatProxy(
     $post,
     fn (): string => bin2hex(random_bytes(16)),
     fn (): int => time(),
+    $config->w2Chat,
 );
 $result = $proxy->handle($facts, $input, bin2hex(random_bytes(8)), $emit);
 if ($result['status'] !== 200 && !$started) {

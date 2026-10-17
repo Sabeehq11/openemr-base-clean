@@ -10,10 +10,11 @@
 .copilot-answer, .copilot-degraded { background: #f6f8fa; border: 1px solid #e1e6eb; }
 .copilot-degraded { background: #fff8e5; border-color: #f0d98a; }
 .copilot-denied, .copilot-error { background: #fdecea; border: 1px solid #f1b5ae; color: #8a1c10; }
-.copilot-status, .copilot-note { color: #5b6773; font-style: italic; font-size: 12px; margin: 4px 0; }
-.copilot-claim { margin: 4px 0; }
+.copilot-status, .copilot-note { color: #5b6773; font-style: italic; font-size: 12px; margin: 8px 0 2px; }
+.copilot-claim { margin: 4px 0; line-height: 1.45; }
+.copilot-claim-text { margin-right: 6px; }
 .copilot-flag .copilot-claim-text { font-weight: 600; color: #8a4b00; }
-.copilot-cite { display: inline-block; margin-left: 4px; padding: 0 6px; border: 0; border-radius: 8px; background: #dbe8f5; color: #0b4a8a; font: inherit; font-size: 11px; cursor: pointer; }
+.copilot-cite, .copilot-view-source { display: inline-block; margin: 2px 6px 2px 0; padding: 1px 6px; border: 0; border-radius: 8px; background: #dbe8f5; color: #0b4a8a; font: inherit; font-size: 11px; line-height: 1.6; cursor: pointer; vertical-align: baseline; }
 .copilot-cite:hover, .copilot-cite[aria-expanded="true"] { background: #0b5cab; color: #fff; }
 .copilot-cite:focus-visible { outline: 2px solid #0b5cab; outline-offset: 1px; }
 .copilot-cite:disabled { background: #e8ecf0; color: #5b6773; cursor: default; }
@@ -30,3 +31,9 @@
 .copilot-send { padding: 6px 12px; border: 0; border-radius: 4px; background: #0b5cab; color: #fff; cursor: pointer; }
 .copilot-send:disabled { opacity: .5; cursor: default; }
 .copilot-declined { background: #fff8e5; border: 1px solid #f0d98a; border-left: 3px solid #b7791f; color: #5c3b00; }
+.copilot-view-source { background: #fff; border: 1px solid #0b5cab; margin-left: 6px; }
+.copilot-source-view { margin: 2px 0 6px 12px; padding: 6px 8px; background: #fff; border: 1px solid #b8c2cc; border-left: 3px solid #0b5cab; border-radius: 4px; font-size: 12px; }
+.copilot-source-page { position: relative; display: block; max-width: 100%; line-height: 0; border: 1px solid #d5dde5; }
+.copilot-source-img { display: block; width: 100%; height: auto; }
+.copilot-source-bbox { position: absolute; box-sizing: border-box; border: 2px solid #d9480f; background: rgba(255, 192, 0, .25); pointer-events: none; }
+.copilot-source-quote { margin: 4px 0 0; }

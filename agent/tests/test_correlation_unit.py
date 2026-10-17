@@ -110,7 +110,8 @@ def test_span_emits_one_log_line_with_name_timing_and_status_only(caplog):
     fields = [r.fields for r in caplog.records if r.name == "agent.trace"]
     assert [(f["span_kind"], f["span_name"], f["status"]) for f in fields] == [("tool", "get_problems", "ok"),
                                                                               ("llm", "complete", "error")]
-    assert all(set(f) == {"span_kind", "span_name", "ms", "status"} for f in fields)
+    # C4 adds the span and parent ids (random hex, no content); nothing else may appear.
+    assert all(set(f) == {"span_kind", "span_name", "ms", "status", "span_id", "parent_span_id"} for f in fields)
 
 
 def test_every_log_line_of_one_chat_has_the_same_id(tmp_path, capsys):

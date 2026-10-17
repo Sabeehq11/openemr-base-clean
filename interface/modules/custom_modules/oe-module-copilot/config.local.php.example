@@ -5,4 +5,6 @@ return [
     'agent_base_url' => 'http://agent:8400',
     'signing_secret' => 'same value as MODULE_SIGNING_SECRET in agent/.env',
     'oauth_client_id' => 'same value as OAUTH_CLIENT_ID in agent/.env',
+    // Optional. true sends chat to /v1/w2/chat (needs W2_ENABLED=1 on the agent). Default false: /v1/chat.
+    'w2_chat' => false,
 ];

@@ -76,9 +76,14 @@ def lab_flag_findings(labs: list[LabResult]) -> list[RuleFinding]:
         reported = _reported_kind(lab.flag_reported)
         if calc != "normal" and reported != calc:
             shown = lab.flag_reported or "no flag stored"
+            # The date, and a historical label when a newer result for the same test exists, keep an older stored
+            # value from being read as the current one. The stored value itself is never changed.
+            when = f"collected {lab.collected.isoformat()}" if lab.collected else "collection date not recorded"
+            latest = max((o.collected for o in labs if o.test == lab.test and o.collected), default=None)
+            historical = "Historical result. " if lab.collected and latest and lab.collected < latest else ""
             out.append(RuleFinding(
                 "lab_flag_recompute",
-                f"{lab.test} {lab.value} {lab.unit or ''} is {calc} against the recorded range "
+                f"{historical}{lab.test} {lab.value} {lab.unit or ''} ({when}) is {calc} against the recorded range "
                 f"({lab.ref_low}-{lab.ref_high}); the chart flag is: {shown}.".replace("  ", " "),
                 (lab.source_id,)))
     return out

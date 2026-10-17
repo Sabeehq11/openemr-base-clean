@@ -1,0 +1,32 @@
+{
+ "allergies": [
+  {
+   "value": "Penicillin (rash)",
+   "confidence": 0.9,
+   "evidence": {
+    "page": 1,
+    "quote": "Allergy: Penicillin (rash)",
+    "bbox": [
+     0.0817,
+     0.4129,
+     0.2695,
+     0.4309
+    ]
+   }
+  }
+ ],
+ "chief_concern": {
+  "value": "Follow-up for diabetes and kidney function",
+  "confidence": 0.9,
+  "evidence": {
+   "page": 1,
+   "quote": "Chief concern: Follow-up for diabetes and kidney function",
+   "bbox": [
+    0.0817,
+    0.3144,
+    0.5392,
+    0.3324
+   ]
+  }
+ }
+}

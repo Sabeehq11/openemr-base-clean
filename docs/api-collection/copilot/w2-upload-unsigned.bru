@@ -1,0 +1,24 @@
+meta {
+  name: Upload without a signature (must be refused)
+  type: http
+  seq: 21
+}
+
+post {
+  url: {{agent}}/v1/w2/documents
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "document_id": 9003,
+    "doc_type": "lab_pdf",
+    "content_b64": "AAAA"
+  }
+}
+
+assert {
+  res.status: eq 401
+}

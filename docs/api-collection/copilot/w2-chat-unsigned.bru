@@ -1,0 +1,22 @@
+meta {
+  name: W2 chat without a signature (must be refused)
+  type: http
+  seq: 22
+}
+
+post {
+  url: {{agent}}/v1/w2/chat
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "patient_uuid": "{{patient_uuid}}",
+    "question": "brief"
+  }
+}
+
+assert {
+  res.status: eq 401
+}

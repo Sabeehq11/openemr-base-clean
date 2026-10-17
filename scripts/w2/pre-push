@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Local W2 gate: agent tests, golden set plus eval gate, secret scan. Runs before `git push`.
+# This is a convenience for catching a failure before CI does. It can be skipped (`git push --no-verify`), so the
+# GitHub workflow .github/workflows/w2-eval-gate.yml is the check that actually blocks a merge.
+set -u
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# Only when a push touches a Week 2 surface. Module, UI and OpenAPI changes count, so they cannot
+# skip the local gate either. With no upstream to compare against (a new branch) it cannot tell, so it runs.
+if [ "${W2_GATE_FORCE:-}" != "1" ] && changed="$(git diff --name-only '@{upstream}..HEAD' 2>/dev/null)"; then
+  echo "$changed" | grep -qE '^(agent/|evals/|scripts/w2/|scripts/copilot/|interface/modules/custom_modules/oe-module-copilot/|docs/week2/openapi.yaml|tests/playwright/specs/w2-|tests/js/copilot-|tests/Tests/Isolated/Modules/Copilot/|.github/workflows/w2-eval-gate.yml)' \
+    || { echo "w2 gate: no Week 2 changes, skipping"; exit 0; }
+fi
+
+PY="${PYTHON:-$ROOT/agent/.venv/bin/python}"
+[ -x "$PY" ] || PY="$(command -v python3)"
+
+echo "w2 gate: workflow scope"
+"$PY" scripts/w2/workflow_scope.py || { echo "w2 gate: workflow scope failed, push blocked"; exit 1; }
+echo "w2 gate: agent tests"
+(cd agent && "$PY" -m pytest tests -m "not live" -q) || { echo "w2 gate: tests failed, push blocked"; exit 1; }
+echo "w2 gate: golden set and eval gate"
+"$PY" -m evals.gate || { echo "w2 gate: eval gate failed, push blocked (see evals/results/gate-latest.md)"; exit 1; }
+echo "w2 gate: secret scan"
+"$PY" scripts/copilot/secret_scan.py || { echo "w2 gate: secret scan failed, push blocked"; exit 1; }
+echo "w2 gate: passed"

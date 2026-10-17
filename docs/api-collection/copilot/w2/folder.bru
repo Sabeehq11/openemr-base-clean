@@ -1,0 +1,50 @@
+meta {
+  name: w2
+  seq: 20
+}
+
+docs {
+  Requests here are signed exactly like the OpenEMR module signs them (agent/app/signing.py):
+  HMAC-SHA256 over "v1 \n METHOD \n path \n timestamp \n nonce \n sha256(body) \n user \n sha256(token)".
+  Every request gets a fresh timestamp and a fresh random nonce, so replay protection is exercised, not bypassed.
+  Needs: signing_secret, user_uuid, user_token (see scripts/copilot/copilot_collection_env.sh), plus lab_pdf_b64 (base64 of
+  agent/tests/fixtures/w2/lab_report.pdf: base64 -i agent/tests/fixtures/w2/lab_report.pdf | tr -d '\n').
+  The agent must run with W2_ENABLED=true (add W2_USE_STUB_VLM=true for the offline demo). With it off these routes are 404.
+  Nothing secret is stored here.
+}
+
+script:pre-request {
+  const CryptoJS = require("crypto-js");
+
+  const secret = bru.getEnvVar("signing_secret");
+  const user = bru.getEnvVar("user_uuid");
+  const token = bru.getEnvVar("user_token");
+  if (!secret || !user || !token) {
+    throw new Error("signing_secret, user_uuid and user_token must be set; run scripts/copilot/copilot_collection_env.sh");
+  }
+
+  // Bruno fills {{variables}} after pre-request scripts run, so fill them here before signing. What is signed must be
+  // the exact bytes that are sent.
+  const raw = req.getBody();
+  let bodyText = "";
+  if (raw !== undefined && raw !== null && raw !== "") {
+    const filled = bru.interpolate(typeof raw === "string" ? raw : JSON.stringify(raw));
+    bodyText = JSON.stringify(JSON.parse(filled));
+    req.setBody(bodyText);
+  }
+
+  const url = req.getUrl();
+  const path = bru.interpolate(url).replace(/^[a-z]+:\/\/[^/]+/i, "").split("?")[0];
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const nonce = CryptoJS.lib.WordArray.random(16).toString(CryptoJS.enc.Hex);
+  const sha = (s) => CryptoJS.SHA256(s).toString(CryptoJS.enc.Hex);
+  const canonical = ["v1", req.getMethod().toUpperCase(), path, timestamp, nonce, sha(bodyText), user, sha(token)].join("\n");
+  const signature = CryptoJS.HmacSHA256(canonical, secret).toString(CryptoJS.enc.Hex);
+
+  req.setHeader("content-type", "application/json");
+  req.setHeader("x-copilot-timestamp", timestamp);
+  req.setHeader("x-copilot-nonce", nonce);
+  req.setHeader("x-copilot-signature", signature);
+  req.setHeader("x-copilot-user", user);
+  req.setHeader("x-copilot-token", token);
+}

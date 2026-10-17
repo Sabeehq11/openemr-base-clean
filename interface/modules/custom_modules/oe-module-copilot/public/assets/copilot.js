@@ -1,6 +1,41 @@
 /* Clinical Co-Pilot dock. All model/chart text is inserted with textContent only (never innerHTML). */
 (function () {
     'use strict';
+
+    var SECTION_BY_KIND = { Patient: 'Patient', Problem: 'Problems', Medication: 'Medications',
+        Allergy: 'Allergies', 'Lab result': 'Recent labs', Encounter: 'Encounters' };
+
+    // Groups follow the cited record type, not words in the claim. A medication sentence that names the patient
+    // stays under Medications. Rule checks are historical chart flags. Uncited claims still render.
+    function chartSections(claims, sources) {
+        var order = ['Patient', 'Problems', 'Medications', 'Allergies', 'Recent labs', 'Encounters', 'Other chart facts', 'Historical chart flags'];
+        var buckets = {};
+        order.forEach(function (name) { buckets[name] = []; });
+        (claims || []).forEach(function (c) {
+            if (c.kind === 'flag' || c.rule_based) { buckets['Historical chart flags'].push(c); return; }
+            var kinds = (c.source_ids || []).map(function (id) { return sources && sources[id] && sources[id].kind; }).filter(Boolean);
+            var unique = kinds.filter(function (k, i) { return kinds.indexOf(k) === i; });
+            var name = unique.length === 1 ? SECTION_BY_KIND[unique[0]] : null;
+            buckets[name || 'Other chart facts'].push(c);
+        });
+        return order.filter(function (name) { return buckets[name].length; }).map(function (name) { return [name, buckets[name]]; });
+    }
+
+    // Entities can survive in verified text. Decode only named entities and numeric character references, never tags.
+    function displayText(value) {
+        return String(value == null ? '' : value).replace(/&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, function (entity) {
+            var named = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+            var key = entity.slice(1, -1);
+            if (named[key]) { return named[key]; }
+            var hex = /^&#x([0-9a-fA-F]+);$/.exec(entity);
+            var dec = /^&#(\d+);$/.exec(entity);
+            var code = hex ? parseInt(hex[1], 16) : parseInt(dec[1], 10);
+            return code >= 32 && code !== 127 ? String.fromCodePoint(code) : entity;
+        });
+    }
+    if (typeof module === 'object' && module.exports) { module.exports = { chartSections: chartSections, displayText: displayText }; }
+    if (typeof window !== 'undefined') { window.CopilotDisplay = displayText; }
+
     var root = document.getElementById('copilot-root');
     if (!root || root.dataset.ready) { return; }
     root.dataset.ready = '1';
@@ -13,7 +48,7 @@
     function el(tag, cls, text) {
         var e = document.createElement(tag);
         if (cls) { e.className = cls; }
-        if (text !== undefined) { e.textContent = text; }
+        if (text !== undefined) { e.textContent = displayText(text); }
         return e;
     }
 
@@ -82,8 +117,8 @@
         return card;
     }
 
-    function chip(sourceId, container, sources) {
-        var label = sourceId.split('/')[0] + ' ' + sourceId.split('/').pop().slice(0, 8);
+    function chip(sourceId, container, sources, labelOverride) {
+        var label = labelOverride || (sourceId.split('/')[0] + ' ' + sourceId.split('/').pop().slice(0, 8));
         var src = (sources || {})[sourceId];
         var c = el('button', 'copilot-cite', label);
         c.type = 'button';
@@ -115,25 +150,70 @@
         return map;
     }
 
-    function renderAnswer(data) {
-        var box = el('div', 'copilot-msg copilot-answer');
-        var sources = indexSources(data.sources);
-        (data.claims || []).forEach(function (c) {
+    // Week 2 claims carry whole citations (document or guideline), not ids into `sources`. Each citation becomes a
+    // read-only card showing where in the document or guideline the statement comes from.
+    function renderCitedClaims(box, claims, heading) {
+        if (!(claims || []).length) { return; }
+        box.appendChild(el('p', 'copilot-note', heading));
+        claims.forEach(function (c) {
             var wrap = el('div', 'copilot-claim-wrap');
-            var row = el('p', 'copilot-claim copilot-' + c.kind);
+            var row = el('p', 'copilot-claim');
+            var sources = {};
             row.appendChild(el('span', 'copilot-claim-text', c.text));
-            (c.source_ids || []).forEach(function (s) { row.appendChild(chip(s, wrap, sources)); });
-            if (c.rule_based) { row.appendChild(el('span', 'copilot-rule', 'rule check')); }
+            (c.citations || []).forEach(function (ci) {
+                var guide = ci.source_type === 'guideline';
+                var key = guide ? ci.field_or_chunk_id : ci.source_id + '#' + ci.field_or_chunk_id;
+                sources[key] = {
+                    source_id: key, kind: guide ? 'guideline' : 'document', title: ci.source_id,
+                    fields: [{ label: guide ? 'Section' : 'Page', value: String(ci.page_or_section) },
+                             { label: guide ? 'Passage' : 'Quote', value: String(ci.quote_or_value) }]
+                };
+                row.appendChild(chip(key, wrap, sources, (guide ? 'Guideline ' : 'Document ') + ci.source_id.split('/').pop()));
+                // Click-to-source: only extracted document citations have a page image to show.
+                if (!guide && ci.source_type === 'extracted' && window.CopilotSource) {
+                    row.appendChild(window.CopilotSource.button(root.dataset.sourceEndpoint, ci, wrap));
+                }
+            });
             wrap.insertBefore(row, wrap.firstChild);
             box.appendChild(wrap);
         });
-        if (!(data.claims || []).length) {
+    }
+
+    function appendClaim(box, claim, sources) {
+        var wrap = el('div', 'copilot-claim-wrap');
+        var row = el('p', 'copilot-claim copilot-' + claim.kind);
+        row.appendChild(el('span', 'copilot-claim-text', claim.text));
+        (claim.source_ids || []).forEach(function (s) { row.appendChild(chip(s, wrap, sources)); });
+        if (claim.rule_based) { row.appendChild(el('span', 'copilot-rule', 'rule check')); }
+        wrap.insertBefore(row, wrap.firstChild);
+        box.appendChild(wrap);
+    }
+
+    // /v1/w2/chat nests the unchanged Week 1 answer under `chart` and adds two cited groups beside it; /v1/chat sends
+    // the Week 1 answer at the top level. Both shapes render here.
+    function renderAnswer(data) {
+        var box = el('div', 'copilot-msg copilot-answer');
+        var w2 = !!data.chart && typeof data.chart === 'object';
+        var chart = w2 ? data.chart : data;
+        var sources = indexSources(chart.sources);
+        chartSections(chart.claims, sources).forEach(function (section) {
+            box.appendChild(el('p', 'copilot-note', section[0]));
+            section[1].forEach(function (c) { appendClaim(box, c, sources); });
+        });
+        var docs = w2 ? (data.document_claims || []) : [];
+        var guides = w2 ? (data.guideline_claims || []) : [];
+        renderCitedClaims(box, docs, 'From uploaded documents');
+        renderCitedClaims(box, guides, 'Guideline evidence');
+        if (!(chart.claims || []).length && !docs.length && !guides.length) {
             box.appendChild(el('p', 'copilot-claim', 'No verified statements could be produced for that question.'));
         }
-        if (data.dropped_count) {
-            box.appendChild(el('p', 'copilot-note', data.dropped_count + ' unverified statement(s) were withheld.'));
+        // Withheld statements from every stage are counted: Stage A's own count plus Stage B's.
+        var dropped = (data.dropped_count || 0) + (w2 ? (chart.dropped_count || 0) : 0);
+        if (dropped) {
+            box.appendChild(el('p', 'copilot-note', dropped + ' unverified statement(s) were withheld.'));
         }
-        (data.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); });
+        (chart.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); });
+        if (w2) { (data.notes || []).forEach(function (n) { box.appendChild(el('p', 'copilot-note', n)); }); }
         log.appendChild(box);
         log.scrollTop = log.scrollHeight;
     }

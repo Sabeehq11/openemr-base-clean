@@ -46,6 +46,41 @@ Alert thresholds come from `app/metrics.py` and need at least 5 samples in the w
    `OE_LIVE=1 python -m pytest tests/test_tools_live.py`, fix the mapper, add a regression test.
 4. Failures are retried once automatically; sustained failures mean the cause is persistent, not transient.
 
+## w2_extraction_failure_rate
+**Fires:** more than 20% of document extractions ended `failed` over 10 minutes (needs 5 or more; rejected and denied uploads do not count).
+**Patient impact:** uploaded documents are kept but show no extracted data; nothing is written to the chart from a failed extraction.
+
+1. Dashboard, Week 2 section: failure rate, ingest p95 and the outcome counts. Logs: `rg '"msg": "w2_extract"'` and group by `status` (`vlm_error`, `schema_invalid`, `no_text`).
+2. Mostly `vlm_error`: the provider or key. Check `https://status.openrouter.ai`, `OPENROUTER_API_KEY`, and `/ready` (`w2_checks`). Documents are kept; extraction can be retried by re-uploading the same file (a duplicate reuses the stored document).
+3. Mostly `schema_invalid`: the model output stopped matching the strict schema. Check `W2_VLM_MODEL` was not changed, reproduce on a synthetic fixture, never log the content, then add a regression case.
+4. Mostly one document type: a layout the renderer cannot read. Check the renderer names in the `w2_startup` event.
+
+## w2_retrieval_latency_p95
+**Fires:** p95 of the `w2/retrieve` span above 3 s over 5 minutes (needs 5 or more).
+**Patient impact:** guideline evidence arrives late. Chat still answers; the 30 s worker timeout bounds it.
+
+1. Open the trace for a slow request by its `correlation_id`: the `embed` and `rerank` child spans show which stage is slow.
+2. `rerank` slow: provider degraded. After one retry the retriever skips the rerank (`w2_rerank status=skipped`) and uses the fused order. Check `/ready` (`reranker` reports `degraded` after a failed call).
+3. `embed` slow: same for the embedder; on failure retrieval is sparse-only. Embedding vectors are cached in `data/w2_embed_cache.json`, so only new text pays.
+4. Neither: check CPU on the host (BM25 is in process).
+
+## w2_eval_regression
+**Fires:** a rubric in the latest golden-set result is more than 5 points below `evals/w2/baseline.json`.
+**Patient impact:** none directly; the quality gate that protects extraction, citation and refusal behavior has slipped.
+**Where it runs:** this alert reads `evals/results/w2-golden-latest.json` and `evals/w2/baseline.json`, which are repo files. The deployed agent image does not contain them, so there the dashboard shows `n/a (CI)` and the alert cannot fire. Enforcement is the CI gate (`w2-eval-gate.yml`), which fails the pull request. The alert is for a source checkout or dev stack.
+
+1. Dashboard, Eval gate table: which rubric and category regressed. CI (`w2-eval-gate.yml`) fails the same change, so find the commit that went out without it.
+2. Reproduce with `python -m evals.run` (stub, no network). Fix the cause; do not lower the baseline to make the alert quiet.
+3. An intentional change: update the baseline in the same commit and say why in the commit message.
+
+## Week 2 degraded (`/ready` status `degraded`)
+`/ready` returns 200 with `status: degraded` and a failed entry in `w2_checks`. Week 1 chat is unaffected.
+
+- `document_store` failed: `w2.db` cannot be opened. Check the data volume and disk space; restore from backup if corrupt (W2_ARCHITECTURE.md section 10). Week 2 requests return an unavailable error until then.
+- `vector_index` failed: the guideline corpus did not load or the last embedding call failed (retrieval is sparse-only). Restore the provider; no data loss.
+- `reranker` failed: key missing or the last rerank call failed; the fused order is used and flagged. Set `OPENROUTER_API_KEY` or wait for the provider.
+- These checks never call a provider, so a state clears only after the next real request succeeds.
+
 ## Audit chain broken
 `verify-audit` exits 3, the dashboard says BROKEN, and `/ready` reports `audit_chain` not ok.
 

@@ -118,7 +118,7 @@ def build_chat_router(gateway: Gateway, runner: ToolRunner, llm_factory: Callabl
         loop = AgentLoop(runner, llm_factory())
 
         async def stream() -> AsyncIterator[str]:
-            trace, tok = tracing.start(ctx.correlation_id, model)
+            trace, tok = tracing.start(ctx.correlation_id, model, flow="chat")
             gauge.inflight += 1
             try:
                 async for chunk in _run(trace):
